@@ -310,7 +310,29 @@ class Bridge:
 
     # ---- un turno
 
+    async def _avisar_error(self, task_id: str, mensaje: str) -> None:
+        # Best-effort: si el socket ya se cayo, Ragnar da el turno por perdido
+        # solo; lo que no puede pasar es que esto tumbe la tarea.
+        try:
+            await self.enviar({"type": "error", "task_id": task_id, "message": mensaje})
+        except Exception:
+            log.debug("No se pudo avisar el error del turno %s.", task_id, exc_info=True)
+
     async def _turno(self, task_id: str, run: dict, adaptador) -> None:
+        """Un turno de punta a punta. Nada de lo que falle aca puede matar la
+        tarea en silencio: Ragnar se quedaria esperando un `done`/`error` que
+        nunca llega y la tarea, "ejecutando" para siempre (RAG-201). El mensaje
+        lleva solo el TIPO de la excepcion: el texto puede traer rutas, un
+        token o el prompt."""
+        try:
+            await self._correr_turno(task_id, run, adaptador)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.exception("El turno %s se rompio.", task_id)
+            await self._avisar_error(task_id, f"El bridge fallo en el turno ({type(e).__name__}).")
+
+    async def _correr_turno(self, task_id: str, run: dict, adaptador) -> None:
         try:
             turno = validar_run(run)
         except RunInvalido as e:
@@ -357,6 +379,31 @@ class Bridge:
             return
 
         self._procesos[task_id] = proceso
+        try:
+            # Tope por turno (RAG-201): un CLI colgado ocupaba su lugar en
+            # `max_turnos` para siempre (solo agy tiene un tope propio).
+            await asyncio.wait_for(
+                self._seguir_proceso(task_id, proceso, traductor), self.cfg.timeout_turno
+            )
+        except asyncio.TimeoutError:
+            log.warning("El turno %s supero el tope de %s s: se corta.", task_id, self.cfg.timeout_turno)
+            await self._matar_proceso(proceso)
+            await self._avisar_error(
+                task_id,
+                f"El turno supero el tope de {self.cfg.timeout_turno} s del bridge (timeout_turno) y se corto.",
+            )
+        except asyncio.CancelledError:
+            await self._matar_proceso(proceso)
+            raise
+        except Exception as e:
+            log.exception("El turno %s se rompio.", task_id)
+            await self._matar_proceso(proceso)
+            await self._avisar_error(task_id, f"El bridge fallo a mitad del turno ({type(e).__name__}).")
+        finally:
+            self._procesos.pop(task_id, None)
+
+    async def _seguir_proceso(self, task_id: str, proceso, traductor) -> None:
+        """Reenvia lo que emite el CLI hasta que termina y manda el `done`."""
         stderr_buf = bytearray()
 
         async def leer_stderr():
@@ -401,19 +448,8 @@ class Bridge:
             await self.enviar(
                 {"type": "done", "task_id": task_id, "exit_code": codigo, "stderr": stderr}
             )
-        except asyncio.CancelledError:
-            await self._matar_proceso(proceso)
-            raise
-        except Exception:
-            log.exception("El turno %s se rompio.", task_id)
-            await self._matar_proceso(proceso)
-            try:
-                await self.enviar({"type": "error", "task_id": task_id, "message": "El bridge fallo a mitad del turno."})
-            except Exception:
-                pass
         finally:
             lector_err.cancel()
-            self._procesos.pop(task_id, None)
 
     # ---- corte de procesos
 

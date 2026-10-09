@@ -92,6 +92,10 @@ class Config:
     reprobar_cada: int = 120
     # Turnos simultaneos como maximo (conversaciones distintas a la vez).
     max_turnos: int = 4
+    # Tope de un turno en segundos, para CUALQUIER agente: pasado esto el
+    # bridge corta el CLI (y sus hijos) y le avisa a Ragnar. Generoso a
+    # proposito: es para un CLI colgado, no para apurar un turno largo.
+    timeout_turno: float = 2 * 60 * 60
     # Cuantos bytes del stderr del CLI se conservan para reportar un fallo.
     tope_stderr: int = 16384
     # Un evento de stream-json mas grande que esto (un Read de un archivo
@@ -171,6 +175,12 @@ def cargar(ruta: Optional[Path] = None) -> Config:
         raise ConfigError(
             f"'codex_sandbox' tiene que ser uno de {', '.join(CODEX_SANDBOXES)} (es {cfg.codex_sandbox!r})."
         )
+    if (
+        isinstance(cfg.timeout_turno, bool)
+        or not isinstance(cfg.timeout_turno, (int, float))
+        or cfg.timeout_turno <= 0
+    ):
+        raise ConfigError(f"'timeout_turno' tiene que ser un numero de segundos mayor a 0 (es {cfg.timeout_turno!r}).")
     if cfg.codex_reasoning and cfg.codex_reasoning not in CODEX_RAZONAMIENTOS:
         raise ConfigError(
             f"'codex_reasoning' tiene que ser uno de {', '.join(CODEX_RAZONAMIENTOS)} o vacio (es {cfg.codex_reasoning!r})."

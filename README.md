@@ -277,6 +277,7 @@ vas a ver la tarjeta **Autorizar** (paso siguiente).
 | `codex_sandbox` | `read-only` | (codex) `read-only` (lee y conversa), `workspace-write` (edita dentro de `workdir` y de `add_dirs`) o `danger-full-access` (sin sandbox ni aprobaciones, `--dangerously-bypass-approvals-and-sandbox`: **solo en un servidor desechable**). Siempre con `approval_policy="never"` |
 | `codex_home` | `~/.codex` | (codex) carpeta de Codex con tu sesión iniciada; solo se exporta `CODEX_HOME` si la cambiás |
 | `max_turnos` | `4` | conversaciones simultáneas |
+| `timeout_turno` | `7200` | tope de un turno en segundos, para cualquier agente: pasado esto el bridge corta el CLI (y sus hijos) y Ragnar ve el turno como fallido |
 
 Después de editarlo: `systemctl --user restart ragnar-bridge`.
 
