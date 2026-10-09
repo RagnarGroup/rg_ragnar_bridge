@@ -48,6 +48,9 @@ PREFIJOS_BOOTSTRAP = {
     "claude": (".claude/agents/", ".claude/skills/"),
     "agy": (".agent/rules/", ".agent/workflows/"),
     "codex": (".codex/agents/", ".agents/skills/"),
+    # hermes NO esta (RAG-187): sus skills viven en ~/.hermes/skills/ (global
+    # del usuario) y no hay una carpeta estandar de agentes/skills POR
+    # PROYECTO que se pueda dar por buena. No se inventa una.
 }
 
 
@@ -297,6 +300,11 @@ class Bridge:
         project_key = mensaje.get("project_key")
         mode = mensaje.get("mode")
         overwrite = mensaje.get("overwrite") is True
+        if cli == "hermes":
+            raise ValueError(
+                "Hermes no tiene una carpeta estándar de agentes/skills por proyecto "
+                "(sus skills son globales, en ~/.hermes/skills/): el bootstrap no la soporta."
+            )
         if cli not in PREFIJOS_BOOTSTRAP or mode not in ("preview", "apply"):
             raise ValueError("CLI o modo de bootstrap inválido.")
         if not isinstance(project_key, str) or project_key not in self.cfg.project_paths:

@@ -404,3 +404,5 @@ arme el comando y traduzca sus eventos al formato de Claude Code (ver
   responde 501).
 - Tools de tickets de Ragnar (MCP) para Antigravity.
 - Tarjeta **Autorizar** para Codex (hoy el alcance se fija con `codex_sandbox`).
+- Bootstrap de agentes/skills para Hermes: sus skills son globales (`~/.hermes/skills/`) y no hay
+  una carpeta estándar por proyecto; el bridge responde que no lo soporta en vez de inventar una.

@@ -169,3 +169,27 @@ def test_cuota_de_hermes_es_none(tmp_path):
 
     cfg = Config(url="ws://x", token="t", agents=["hermes"], hermes_cmd=[sys.executable, FAKE_HERMES])
     assert HermesAdaptador(cfg, tmp_path).cuota("x") is None
+
+
+async def test_conceder_deja_un_warning_y_no_se_ignora_en_silencio(arrancar, ragnar, tmp_path, caplog):
+    """RAG-187: Hermes no tiene permisos que conceder; si Ragnar igual manda
+    `conceder`, queda constancia en el log y el comando no cambia."""
+    await arrancar()
+    tid = str(uuid.uuid4())
+    with caplog.at_level("WARNING", logger="ragnar_bridge"):
+        await ragnar.enviar(run(tid, prompt="hola", conceder="Bash(docker ps:*)"))
+        _, fin = await ragnar.hasta_done(tid)
+    assert fin["type"] == "done"
+    assert any("Hermes" in r.getMessage() and "docker ps" in r.getMessage() for r in caplog.records)
+    argv = _invocaciones(tmp_path)[0]["argv"]
+    assert "--yolo" not in argv and not any("docker" in a for a in argv)
+
+
+def test_bootstrap_de_hermes_explica_que_no_hay_carpeta_estandar(tmp_path):
+    from ragnar_bridge.bridge import PREFIJOS_BOOTSTRAP, Bridge
+
+    assert "hermes" not in PREFIJOS_BOOTSTRAP
+    bridge = Bridge(Config(url="ws://localhost", token="t", project_paths={"RAG": str(tmp_path)}))
+    mensaje = {"cli": "hermes", "project_key": "RAG", "mode": "preview", "files": [{"path": "x", "content": "", "sha256": ""}]}
+    with pytest.raises(ValueError, match="Hermes no tiene una carpeta"):
+        bridge._aplicar_bootstrap(mensaje)
