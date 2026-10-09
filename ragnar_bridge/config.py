@@ -130,7 +130,7 @@ def cargar(ruta: Optional[Path] = None) -> Config:
         crudo = json.loads(ruta.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ConfigError(
-            f"No existe {ruta}. Creala con `ragnar-bridge init --url ... --token ...`."
+            f"No existe {ruta}. Creala con `ragnar-bridge init --url ...` (te pide el token)."
         )
     except json.JSONDecodeError as e:
         raise ConfigError(f"{ruta} no es JSON valido: {e}")
@@ -194,10 +194,16 @@ def guardar(cfg: Config, ruta: Optional[Path] = None) -> Path:
     ruta.parent.mkdir(parents=True, exist_ok=True)
     datos = {k: getattr(cfg, k) for k in Config.__dataclass_fields__}
     tmp = ruta.with_suffix(".tmp")
-    tmp.write_text(json.dumps(datos, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    # El archivo NACE con 600 (RAG-208): escribirlo y despues hacer chmod
+    # dejaba una ventana en que, con umask 022, cualquiera podia leer el
+    # token. Un .tmp que haya quedado de antes se borra: os.open no cambia
+    # los permisos de un archivo que ya existe.
     try:
-        os.chmod(tmp, 0o600)
-    except OSError:
+        tmp.unlink()
+    except FileNotFoundError:
         pass
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as archivo:
+        archivo.write(json.dumps(datos, indent=2, ensure_ascii=False) + "\n")
     os.replace(tmp, ruta)
     return ruta

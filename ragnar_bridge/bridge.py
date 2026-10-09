@@ -12,7 +12,7 @@ import signal
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Dict, Optional
+from typing import AsyncIterator, Dict, Optional, Union
 
 from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
@@ -37,6 +37,11 @@ MAX_FRAME = 32 * 1024 * 1024
 # esto no hay EOF es que un nieto heredo el pipe y lo mantiene abierto.
 ESPERA_DRENAJE = 5.0
 
+# Lo que se tolera por encima de `tope_evento` en el buffer de una linea de
+# stdout antes de descartarla sin terminar de leerla.
+MARGEN_LINEA = 64 * 1024
+TROZO_LECTURA = 64 * 1024
+
 
 # Donde puede escribir el bootstrap dentro de un proyecto, por CLI.
 PREFIJOS_BOOTSTRAP = {
@@ -56,6 +61,58 @@ async def _salida_del_lider(proceso: asyncio.subprocess.Process) -> int:
     while proceso.returncode is None:
         await asyncio.sleep(0.05)
     return proceso.returncode
+
+
+async def _lineas(stream: asyncio.StreamReader, tope: int) -> AsyncIterator[Union[bytes, int]]:
+    """Las lineas de `stream`, sin el salto. Una linea de mas de `tope` bytes
+    no se retiene entera: se descarta a medida que llega y en su lugar sale su
+    largo (un int). Asi la memoria de un turno queda acotada en ~`tope` +
+    un trozo, en vez de lo que el CLI decida emitir en una sola linea."""
+    buf = bytearray()
+    descartados = 0  # > 0: estamos dentro de una linea gigante
+    while True:
+        trozo = await stream.read(TROZO_LECTURA)
+        if not trozo:
+            if descartados:
+                yield descartados + len(buf)
+            elif buf:
+                yield bytes(buf)
+            return
+        buf.extend(trozo)
+        while True:
+            fin = buf.find(b"\n")
+            if fin < 0:
+                break
+            linea = bytes(buf[:fin])
+            del buf[: fin + 1]
+            if descartados:
+                yield descartados + len(linea)
+                descartados = 0
+            elif len(linea) > tope:
+                yield len(linea)
+            else:
+                yield linea
+        if len(buf) > tope:
+            descartados += len(buf)
+            buf.clear()
+
+
+async def _esperar_reconexion(segundos: float) -> None:
+    # Aparte para que los tests puedan ver el backoff sin esperarlo.
+    await asyncio.sleep(segundos)
+
+
+def _leer_bienvenida(crudo) -> dict:
+    """Primer frame de Ragnar. Algo que no sea un objeto JSON (un proxy que
+    contesta HTML, un servidor a medio desplegar) es un fallo de conexion mas:
+    se reintenta con backoff, no tumba a `ejecutar` (RAG-208)."""
+    try:
+        mensaje = json.loads(crudo)
+    except (ValueError, TypeError):
+        raise WebSocketException("Ragnar contesto algo que no es JSON al autenticar.")
+    if not isinstance(mensaje, dict):
+        raise WebSocketException("Ragnar contesto algo inesperado al autenticar.")
+    return mensaje
 
 
 class ErrorFatal(Exception):
@@ -78,6 +135,9 @@ class Bridge:
         # Turnos con un `cancel` que llego antes de que su CLI arrancara.
         self._cancelados: set = set()
         self.username = "bridge"
+        # True en cuanto Ragnar contesta un `welcome` valido en la conexion
+        # actual: recien ahi `ejecutar` reinicia el backoff.
+        self.bienvenido = False
 
     # ---- envio
 
@@ -109,7 +169,7 @@ class Bridge:
                 }
             )
         )
-        bienvenida = json.loads(await asyncio.wait_for(ws.recv(), 15))
+        bienvenida = _leer_bienvenida(await asyncio.wait_for(ws.recv(), 15))
         if bienvenida.get("type") == "error":
             if bienvenida.get("code") in ("auth", "protocol"):
                 raise ErrorFatal(bienvenida.get("message") or bienvenida.get("code"))
@@ -117,6 +177,7 @@ class Bridge:
         if bienvenida.get("type") != "welcome":
             raise WebSocketException(f"Respuesta inesperada de Ragnar: {bienvenida.get('type')!r}")
         self.username = str(bienvenida.get("username") or "bridge")
+        self.bienvenido = True
         log.info(
             "Conectado a Ragnar como %s (servidor %r). Agentes: %s.",
             self.username,
@@ -377,9 +438,11 @@ class Bridge:
             stderr=asyncio.subprocess.PIPE,
             # Una linea de stream-json puede pasar del limite por defecto
             # (64 KB) -- un tool_result con un archivo o un log grande
-            # viaja como UNA linea; readline() relanza LimitOverrunError y
-            # el turno entero moria.
-            limit=64 * 1024 * 1024,
+            # viaja como UNA linea. El tope es `tope_evento` + un margen: una
+            # linea mas larga se descartaria igual, y con 64 MiB por turno el
+            # bridge podia retener cientos de MiB antes de descartarla
+            # (RAG-208). Ver `_lineas`.
+            limit=self.cfg.tope_evento + MARGEN_LINEA,
         )
         if os.name == "posix":
             # Algunos CLIs (conocido en codex-cli: openai/codex#15379,
@@ -452,17 +515,14 @@ class Bridge:
                     del stderr_buf[: len(stderr_buf) - self.cfg.tope_stderr]
 
         async def leer_stdout():
-            while True:
-                linea = await proceso.stdout.readline()
-                if not linea:
-                    return
-                crudo = linea.decode("utf-8", errors="replace").strip()
-                if not crudo:
-                    continue
-                if len(crudo) > self.cfg.tope_evento:
+            async for linea in _lineas(proceso.stdout, self.cfg.tope_evento):
+                if isinstance(linea, int):
                     # Ragnar ignora los tipos que no conoce: se avisa que hubo
                     # algo en vez de tumbar el socket con un frame gigante.
-                    await self.enviar({"type": "event", "task_id": task_id, "raw": {"type": "oversize", "bytes": len(crudo)}})
+                    await self.enviar({"type": "event", "task_id": task_id, "raw": {"type": "oversize", "bytes": linea}})
+                    continue
+                crudo = linea.decode("utf-8", errors="replace").strip()
+                if not crudo:
                     continue
                 try:
                     evento = json.loads(crudo)
@@ -650,15 +710,22 @@ async def _reconectar(cfg: Config, estado_dir: Optional[Path]) -> None:
                 ping_timeout=20,
                 open_timeout=15,
             ) as ws:
-                espera = 1.0
-                await bridge.sesion(ws)
+                bridge.bienvenido = False
+                try:
+                    await bridge.sesion(ws)
+                finally:
+                    # El backoff se reinicia recien con un `welcome` valido: si
+                    # Ragnar (o un proxy) acepta el socket y lo cierra enseguida,
+                    # reconectar cada ~1 s para siempre no ayuda a nadie (RAG-208).
+                    if bridge.bienvenido:
+                        espera = 1.0
             log.info("Ragnar cerro la conexion.")
         except ErrorFatal:
             raise
-        except (OSError, WebSocketException, asyncio.TimeoutError) as e:
+        except (OSError, WebSocketException, asyncio.TimeoutError, ValueError) as e:
             log.warning("Sin conexion con Ragnar (%s: %s).", type(e).__name__, e)
         # Jitter: si Ragnar se reinicia, todos los bridges reconectan a la vez.
-        await asyncio.sleep(espera + random.uniform(0, espera / 2))
+        await _esperar_reconexion(espera + random.uniform(0, espera / 2))
         espera = min(espera * 2, 60.0)
 
 
@@ -684,7 +751,7 @@ async def probar_conexion(cfg: Config) -> str:
                 }
             )
         )
-        respuesta = json.loads(await asyncio.wait_for(ws.recv(), 15))
+        respuesta = _leer_bienvenida(await asyncio.wait_for(ws.recv(), 15))
     if respuesta.get("type") == "error":
         raise ErrorFatal(respuesta.get("message") or respuesta.get("code"))
     return str(respuesta.get("nombre") or "")

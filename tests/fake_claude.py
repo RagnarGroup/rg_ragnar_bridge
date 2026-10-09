@@ -8,7 +8,8 @@ codigo 3 y algo en stderr.
 Con HIJO deja un proceso hijo vivo (en su mismo grupo, como un servidor MCP o
 un shell en background) y escribe su PID en $FAKE_CLAUDE_PID_FILE; con
 HIJO_STDOUT ese hijo ademas hereda stdout/stderr y los mantiene abiertos;
-HIJO_TERCO es lo mismo pero el hijo ignora SIGTERM.
+HIJO_TERCO es lo mismo pero el hijo ignora SIGTERM. Con GRANDE emite una linea
+de ~300 KB antes del `result`.
 """
 
 import json
@@ -46,6 +47,9 @@ if "HIJO" in prompt:
         f.write(str(hijo.pid))
     if "HIJO_TERCO" in prompt:
         time.sleep(1)  # que alcance a ignorar SIGTERM antes de que el lider salga
+if "GRANDE" in prompt:
+    # Una linea de stream-json enorme (un Read de un archivo gigante).
+    print(json.dumps({"type": "user", "relleno": "x" * 300_000}), flush=True)
 if "SLEEP" in prompt:
     time.sleep(60)
 if "FAIL" in prompt:

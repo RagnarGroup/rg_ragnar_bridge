@@ -269,3 +269,163 @@ async def test_sigterm_al_bridge_corta_los_turnos_y_sus_grupos(tmp_path, ragnar,
     resultado = await asyncio.wait_for(asyncio.gather(tarea, return_exceptions=True), 20)
     assert isinstance(resultado[0], asyncio.CancelledError)
     assert await _murio(pid)
+
+
+# ---- RAG-208: reconexion, memoria y token
+
+
+async def _servidor(manejador):
+    from websockets.asyncio.server import serve
+
+    srv = await serve(manejador, "127.0.0.1", 0)
+    return srv, f"ws://127.0.0.1:{srv.sockets[0].getsockname()[1]}"
+
+
+async def _esperas_de_reconexion(monkeypatch, url, cuantas=4):
+    """Corre `ejecutar` hasta `cuantas` reconexiones y devuelve cuanto pidio
+    esperar antes de cada una (sin jitter y sin esperarlo de verdad)."""
+    import ragnar_bridge.bridge as modulo
+
+    esperas = []
+
+    async def anotar(segundos):
+        esperas.append(segundos)
+        if len(esperas) >= cuantas:
+            raise asyncio.CancelledError
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(modulo, "_esperar_reconexion", anotar)
+    monkeypatch.setattr(modulo.random, "uniform", lambda a, b: 0)
+    cfg = Config(url=url, token=TOKEN, agents=["claude"], claude_cmd=[sys.executable, FAKE])
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(ejecutar(cfg), 30)
+    return esperas
+
+
+async def test_backoff_no_se_reinicia_si_ragnar_cierra_antes_del_welcome(monkeypatch):
+    async def cierra(ws):
+        await ws.recv()
+        await ws.close()
+
+    srv, url = await _servidor(cierra)
+    try:
+        assert await _esperas_de_reconexion(monkeypatch, url) == [1.0, 2.0, 4.0, 8.0]
+    finally:
+        srv.close()
+
+
+async def test_backoff_se_reinicia_despues_de_un_welcome_valido(monkeypatch):
+    async def saluda_y_cierra(ws):
+        await ws.recv()
+        await ws.send(json.dumps({"type": "welcome", "username": "gus", "nombre": "t"}))
+        # Un instante antes de cerrar: cerrar justo despues del welcome era
+        # flaky en Linux (a veces el cliente veia el cierre sin el welcome).
+        await asyncio.sleep(0.3)
+        await ws.close()
+
+    srv, url = await _servidor(saluda_y_cierra)
+    try:
+        assert await _esperas_de_reconexion(monkeypatch, url) == [1.0, 1.0, 1.0, 1.0]
+    finally:
+        srv.close()
+
+
+@pytest.mark.parametrize("bienvenida", ["<html>bad gateway</html>", "[1, 2]", "null", '"welcome"'])
+async def test_un_welcome_invalido_se_reintenta_y_no_mata_a_ejecutar(monkeypatch, bienvenida):
+    async def rara(ws):
+        await ws.recv()
+        await ws.send(bienvenida)
+        await ws.close()
+
+    srv, url = await _servidor(rara)
+    try:
+        assert await _esperas_de_reconexion(monkeypatch, url, cuantas=3) == [1.0, 2.0, 4.0]
+    finally:
+        srv.close()
+
+
+async def test_lineas_descarta_una_linea_gigante_sin_retenerla():
+    from ragnar_bridge.bridge import _lineas
+
+    stream = asyncio.StreamReader()
+    stream.feed_data(b"abc\n" + b"x" * 250_000 + b"\nfin\n" + b"y" * 50)
+    stream.feed_eof()
+    salida = [linea async for linea in _lineas(stream, 1000)]
+    assert salida == [b"abc", 250_000, b"fin", b"y" * 50]
+
+
+async def test_una_linea_mas_grande_que_tope_evento_se_avisa_y_el_turno_sigue(arrancar, ragnar):
+    await arrancar(tope_evento=100_000)
+    tid = str(uuid.uuid4())
+    await ragnar.enviar(run(tid, prompt="GRANDE"))
+    eventos, fin = await ragnar.hasta_done(tid)
+    assert fin["type"] == "done" and fin["exit_code"] == 0
+    assert [e["type"] for e in eventos] == ["system", "oversize", "result"]
+    assert eventos[1]["bytes"] > 300_000
+
+
+def test_init_lee_el_token_de_la_variable_de_entorno(tmp_path, monkeypatch):
+    from ragnar_bridge import cli
+
+    monkeypatch.setenv("RAGNAR_BRIDGE_TOKEN", "ragbrg_del_entorno")
+    assert cli._init(_args_init(tmp_path)) == 0
+    assert json.loads((tmp_path / "config.json").read_text())["token"] == "ragbrg_del_entorno"
+
+
+def test_init_lee_el_token_de_stdin(tmp_path, monkeypatch):
+    import io
+
+    from ragnar_bridge import cli
+
+    monkeypatch.delenv("RAGNAR_BRIDGE_TOKEN", raising=False)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("ragbrg_de_stdin\n"))
+    assert cli._init(_args_init(tmp_path)) == 0
+    assert json.loads((tmp_path / "config.json").read_text())["token"] == "ragbrg_de_stdin"
+
+
+def test_init_con_token_en_argv_sigue_andando_pero_avisa(tmp_path, monkeypatch, capsys):
+    from ragnar_bridge import cli
+
+    monkeypatch.delenv("RAGNAR_BRIDGE_TOKEN", raising=False)
+    assert cli._init(_args_init(tmp_path, token="ragbrg_argv")) == 0
+    assert "deprecado" in capsys.readouterr().err
+    assert json.loads((tmp_path / "config.json").read_text())["token"] == "ragbrg_argv"
+
+
+def test_init_sin_token_falla(tmp_path, monkeypatch):
+    import io
+
+    from ragnar_bridge import cli
+
+    monkeypatch.delenv("RAGNAR_BRIDGE_TOKEN", raising=False)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    assert cli._init(_args_init(tmp_path)) == 2
+    assert not (tmp_path / "config.json").exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="permisos de archivo POSIX")
+def test_guardar_crea_el_archivo_con_600_aun_con_umask_abierta(tmp_path):
+    from ragnar_bridge.config import guardar
+
+    viejo = os.umask(0o022)
+    try:
+        (tmp_path / "config.tmp").write_text("{}")  # un .tmp viejo, legible por todos
+        os.chmod(tmp_path / "config.tmp", 0o644)
+        ruta = guardar(Config(url="wss://x", token="ragbrg_secreto"), tmp_path / "config.json")
+    finally:
+        os.umask(viejo)
+    assert os.stat(ruta).st_mode & 0o777 == 0o600
+
+
+def _args_init(tmp_path, token=None):
+    import argparse
+
+    return argparse.Namespace(
+        url="wss://panel.ejemplo.app/api/v1/bridge/ws",
+        token=token,
+        workdir="~",
+        model=None,
+        agent="claude",
+        cli=sys.executable,
+        config=str(tmp_path / "config.json"),
+    )

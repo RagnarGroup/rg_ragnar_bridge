@@ -133,12 +133,17 @@ Tené en cuenta en un bridge compartido:
 
 ## Paso 4 — Instalá el bridge
 
-Pegá en tu VPS el comando que te muestra la app (con tu URL y tu token):
+Pegá en tu VPS el comando que te muestra la app (con tu URL); el script te
+pide el token (`ragbrg_...`) sin mostrarlo:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/gaguilarf/ragnar_bridge/main/install.sh \
-  | bash -s -- --url wss://panel.ragnargroup.app/api/v1/bridge/ws --token ragbrg_...
+  | bash -s -- --url wss://panel.ragnargroup.app/api/v1/bridge/ws
 ```
+
+Sin terminal interactiva, pasalo por la variable `RAGNAR_BRIDGE_TOKEN`. `--token
+ragbrg_...` sigue funcionando pero está deprecado: en los argumentos queda
+visible en `ps` y en el historial del shell.
 
 No hace falta decirle el agente: detecta `claude`, `agy`, `codex` y/o `hermes`. Opciones:
 `--agent claude|agy|codex|hermes` (maneja SOLO ese), `--model M` (modelo de agy o de codex con `--agent codex`),
@@ -369,7 +374,7 @@ bridge en sí corre en Windows, probado en Windows 11):
 
 ```sh
 python -m venv venv && venv/bin/pip install git+https://github.com/gaguilarf/ragnar_bridge   # Windows: venv\Scripts\pip
-ragnar-bridge init --agent claude --url wss://... --token ragbrg_...                          # o --agent agy
+ragnar-bridge init --agent claude --url wss://...    # o --agent agy; pide el token (o RAGNAR_BRIDGE_TOKEN, o stdin)
 ragnar-bridge doctor
 ragnar-bridge run            # dejalo corriendo (launchd en macOS, Tareas programadas o NSSM en Windows)
 ```

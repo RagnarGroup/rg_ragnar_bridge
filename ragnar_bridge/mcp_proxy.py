@@ -31,6 +31,9 @@ from urllib.parse import urljoin, urlsplit
 
 VERSION_PROTOCOLO = "2025-06-18"
 TIMEOUT = 120
+# Tope de una respuesta de Ragnar: mas que esto no es una respuesta de tickets
+# sana, y leerla entera sin limite podia comerse la RAM (RAG-208).
+TOPE_RESPUESTA = 16 * 1024 * 1024
 
 
 def _error(id_, mensaje: str) -> dict:
@@ -121,12 +124,17 @@ class Puente:
             with self._post(msg) as resp:
                 if resp.headers.get("Mcp-Session-Id"):
                     self.sesion = resp.headers["Mcp-Session-Id"]
-                cuerpo = resp.read().decode("utf-8", errors="replace")
+                crudo = resp.read(TOPE_RESPUESTA + 1)
                 tipo = (resp.headers.get("Content-Type") or "").lower()
+            if len(crudo) > TOPE_RESPUESTA:
+                if msg.get("id") is None:
+                    return []
+                return [_error(msg["id"], f"La respuesta de Ragnar supera {TOPE_RESPUESTA // (1024 * 1024)} MiB.")]
+            cuerpo = crudo.decode("utf-8", errors="replace")
         except urllib.error.HTTPError as e:
             if msg.get("id") is None:
                 return []
-            detalle = e.read().decode("utf-8", errors="replace")[:200]
+            detalle = e.read(200).decode("utf-8", errors="replace")
             return [_error(msg["id"], f"Ragnar respondio {e.code}: {detalle}")]
         except (urllib.error.URLError, OSError) as e:
             if msg.get("id") is None:

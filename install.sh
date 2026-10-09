@@ -2,7 +2,11 @@
 # Instala ragnar-bridge como servicio de systemd de usuario (sin root).
 #
 #   curl -fsSL https://raw.githubusercontent.com/gaguilarf/ragnar_bridge/main/install.sh \
-#     | bash -s -- --url wss://panel.ragnargroup.app/api/v1/bridge/ws --token ragbrg_...
+#     | bash -s -- --url wss://panel.ragnargroup.app/api/v1/bridge/ws
+#
+# El token (ragbrg_...) se pide sin eco desde la terminal, o se toma de la
+# variable RAGNAR_BRIDGE_TOKEN. `--token` sigue andando pero esta deprecado: en
+# argv queda visible en `ps` y en el historial del shell.
 #
 # Detecta solo los CLIs instalados en el servidor (Claude Code, Antigravity y/o Codex):
 # con al menos uno alcanza, y la app te deja elegir entre los que funcionan.
@@ -15,7 +19,7 @@ set -euo pipefail
 
 AGENT=""
 URL=""
-TOKEN=""
+TOKEN="${RAGNAR_BRIDGE_TOKEN:-}"
 WORKDIR="$HOME"
 MODEL=""
 NAME=""
@@ -25,7 +29,10 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --agent) AGENT="$2"; shift 2 ;;
     --url) URL="$2"; shift 2 ;;
-    --token) TOKEN="$2"; shift 2 ;;
+    --token)
+      TOKEN="$2"; shift 2
+      echo "AVISO: --token esta deprecado (queda visible en ps y en el historial). Usa la variable RAGNAR_BRIDGE_TOKEN o deja que el script lo pida." >&2
+      ;;
     --workdir) WORKDIR="$2"; shift 2 ;;
     --model) MODEL="$2"; shift 2 ;;
     --name) NAME="$2"; shift 2 ;;
@@ -34,8 +41,15 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+if [ -z "$TOKEN" ] && [ -n "$URL" ] && { : </dev/tty; } 2>/dev/null; then
+  # `curl | bash` deja el stdin ocupado por el script: se lee de la terminal.
+  printf "Token del servidor (ragbrg_..., no se muestra): " >/dev/tty
+  IFS= read -rs TOKEN </dev/tty || true
+  printf "\n" >/dev/tty
+fi
 if [ -z "$URL" ] || [ -z "$TOKEN" ]; then
-  echo "Uso: install.sh --url wss://.../api/v1/bridge/ws --token ragbrg_... [--agent claude|agy|codex] [--workdir DIR] [--model M] [--name N]" >&2
+  echo "Uso: [RAGNAR_BRIDGE_TOKEN=ragbrg_...] install.sh --url wss://.../api/v1/bridge/ws [--agent claude|agy|codex] [--workdir DIR] [--model M] [--name N]" >&2
+  echo "     (sin RAGNAR_BRIDGE_TOKEN el token se pide por la terminal)" >&2
   exit 2
 fi
 case "$AGENT" in ""|claude|agy|codex) ;; *) echo "--agent tiene que ser claude, agy o codex." >&2; exit 2 ;; esac
@@ -79,10 +93,11 @@ python3 -m venv "$VENV"
 "$VENV/bin/pip" install --quiet --upgrade --force-reinstall "$SOURCE"
 
 echo "==> Escribiendo la config en $CONFIG (permisos 600)"
-INIT_ARGS=(--config "$CONFIG" init --url "$URL" --token "$TOKEN" --workdir "$WORKDIR")
+INIT_ARGS=(--config "$CONFIG" init --url "$URL" --workdir "$WORKDIR")
 [ -n "$AGENT" ] && INIT_ARGS+=(--agent "$AGENT" --cli "$CLI_BIN")
 [ -n "$MODEL" ] && INIT_ARGS+=(--model "$MODEL")
-"$VENV/bin/ragnar-bridge" "${INIT_ARGS[@]}"
+# El token va por el entorno de `init`, nunca en sus argumentos.
+RAGNAR_BRIDGE_TOKEN="$TOKEN" "$VENV/bin/ragnar-bridge" "${INIT_ARGS[@]}" </dev/null
 
 echo "==> Verificando (config, CLI y conexion con Ragnar; no gasta cuota)"
 if ! "$VENV/bin/ragnar-bridge" --config "$CONFIG" doctor; then

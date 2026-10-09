@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import getpass
 import logging
 import os
 import shutil
@@ -21,8 +22,40 @@ _INSTALAR = {
 _LOGIN = {"claude": "claude", "agy": "agy", "codex": "codex login", "hermes": "hermes"}
 
 
+# Variable de entorno con el token para `init` (la usa install.sh).
+VARIABLE_TOKEN = "RAGNAR_BRIDGE_TOKEN"
+
+
+def _leer_token(args) -> str:
+    """El token de `init` SIN pasar por argv (RAG-208): los argumentos de un
+    proceso los ve cualquiera con `ps` y quedan en el historial del shell.
+    Orden: --token (deprecado, con aviso), $RAGNAR_BRIDGE_TOKEN, la primera
+    linea de stdin si no es una terminal, o se pide sin eco."""
+    if args.token:
+        print(
+            f"AVISO: --token esta deprecado (queda visible en `ps` y en el historial). "
+            f"Pasalo por la variable {VARIABLE_TOKEN} o por stdin.",
+            file=sys.stderr,
+        )
+        return args.token.strip()
+    token = os.environ.get(VARIABLE_TOKEN, "").strip()
+    if token:
+        return token
+    if sys.stdin is not None and not sys.stdin.isatty():
+        return sys.stdin.readline().strip()
+    return getpass.getpass("Token del servidor (ragbrg_..., no se muestra): ").strip()
+
+
 def _init(args) -> int:
-    cfg = Config(url=args.url, token=args.token, workdir=args.workdir)
+    token = _leer_token(args)
+    if not token:
+        print(
+            f"Falta el token: pasalo por la variable {VARIABLE_TOKEN} o por stdin "
+            "(la app lo muestra una sola vez al crear el servidor).",
+            file=sys.stderr,
+        )
+        return 2
+    cfg = Config(url=args.url, token=token, workdir=args.workdir)
     if args.model:
         if args.agent == "codex":
             cfg.codex_model = args.model
@@ -137,7 +170,13 @@ def main() -> None:
 
     p_init = sub.add_parser("init", help="crea el archivo de configuracion")
     p_init.add_argument("--url", required=True, help="wss://.../api/v1/bridge/ws (la muestra la app)")
-    p_init.add_argument("--token", required=True, help="ragbrg_... (la app lo muestra una sola vez)")
+    p_init.add_argument(
+        "--token",
+        help=(
+            f"DEPRECADO (queda visible en `ps`): el token va por la variable {VARIABLE_TOKEN} "
+            "o por stdin; sin ninguno de los dos se pide sin eco"
+        ),
+    )
     p_init.add_argument(
         "--agent",
         choices=AGENTES,
