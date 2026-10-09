@@ -137,7 +137,7 @@ Pegá en tu VPS el comando que te muestra la app (con tu URL); el script te
 pide el token (`ragbrg_...`) sin mostrarlo:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/gaguilarf/ragnar_bridge/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/RagnarGroup/rg_ragnar_bridge/main/install.sh \
   | bash -s -- --url wss://panel.ragnargroup.app/api/v1/bridge/ws
 ```
 
@@ -188,7 +188,7 @@ Esta función requiere `ragnar-bridge` **0.4.0 o posterior** (**0.5.0** para Cod
 una instalación existente sin reemplazar su config:
 
 ```sh
-~/.local/share/ragnar-bridge/venv/bin/pip install --upgrade --force-reinstall 'git+https://github.com/gaguilarf/ragnar_bridge'
+~/.local/share/ragnar-bridge/venv/bin/pip install --upgrade --force-reinstall 'git+https://github.com/RagnarGroup/rg_ragnar_bridge'
 systemctl --user restart ragnar-bridge.service
 ```
 
@@ -345,7 +345,7 @@ Cuando Ragnar o el chat te pida «actualizar el bridge» (o `doctor` diga que el
 ~/.local/share/ragnar-bridge/venv/bin/ragnar-bridge --version
 
 # 2. Actualizar (--force-reinstall para que traiga el código nuevo aunque la versión no haya cambiado)
-~/.local/share/ragnar-bridge/venv/bin/pip install --upgrade --force-reinstall --no-deps git+https://github.com/gaguilarf/ragnar_bridge
+~/.local/share/ragnar-bridge/venv/bin/pip install --upgrade --force-reinstall --no-deps git+https://github.com/RagnarGroup/rg_ragnar_bridge
 
 # 3. Reiniciar el servicio y comprobar
 systemctl --user restart ragnar-bridge
@@ -373,7 +373,7 @@ El instalador es solo Linux + systemd. En otros sistemas se instala a mano (el
 bridge en sí corre en Windows, probado en Windows 11):
 
 ```sh
-python -m venv venv && venv/bin/pip install git+https://github.com/gaguilarf/ragnar_bridge   # Windows: venv\Scripts\pip
+python -m venv venv && venv/bin/pip install git+https://github.com/RagnarGroup/rg_ragnar_bridge   # Windows: venv\Scripts\pip
 ragnar-bridge init --agent claude --url wss://...    # o --agent agy; pide el token (o RAGNAR_BRIDGE_TOKEN, o stdin)
 ragnar-bridge doctor
 ragnar-bridge run            # dejalo corriendo (launchd en macOS, Tareas programadas o NSSM en Windows)

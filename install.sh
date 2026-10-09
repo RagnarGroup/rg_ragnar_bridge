@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Instala ragnar-bridge como servicio de systemd de usuario (sin root).
 #
-#   curl -fsSL https://raw.githubusercontent.com/gaguilarf/ragnar_bridge/main/install.sh \
+#   curl -fsSL https://raw.githubusercontent.com/RagnarGroup/rg_ragnar_bridge/main/install.sh \
 #     | bash -s -- --url wss://panel.ragnargroup.app/api/v1/bridge/ws
 #
 # El token (ragbrg_...) se pide sin eco desde la terminal, o se toma de la
@@ -23,7 +23,7 @@ TOKEN="${RAGNAR_BRIDGE_TOKEN:-}"
 WORKDIR="$HOME"
 MODEL=""
 NAME=""
-SOURCE="git+https://github.com/gaguilarf/ragnar_bridge"
+SOURCE="git+https://github.com/RagnarGroup/rg_ragnar_bridge"
 
 while [ $# -gt 0 ]; do
   case "$1" in
