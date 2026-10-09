@@ -235,7 +235,15 @@ vas a ver la tarjeta **Autorizar** (paso siguiente).
   pregunta: lo que el *sandbox* no permite falla, y por eso no hay tarjeta
   **Autorizar**. El alcance lo fija `codex_sandbox` en el config del bridge:
   `read-only` (default: lee y conversa), `workspace-write` (edita dentro de
-  `workdir` y de `add_dirs`) o `danger-full-access`. El bridge nunca escribe en tu
+  `workdir` y de `add_dirs`) o `danger-full-access`. Cada turno va con
+  `approval_policy="never"`: lo que el sandbox no deja hacer falla y el modelo ve
+  el error, nada se queda esperando una aprobación. Solo con `danger-full-access`
+  el bridge pasa `--dangerously-bypass-approvals-and-sandbox` (sin sandbox: el
+  modelo corre cualquier comando como el usuario del bridge). Hasta la 0.7.0 ese
+  flag iba **siempre** y `codex_sandbox` no tenía efecto (RAG-196): si venías
+  usando Codex para editar, ahora necesitás `workspace-write`. En Linux el
+  sandbox de Codex usa Landlock/seccomp; en un contenedor sin esas capacidades
+  los comandos del modelo fallan con `read-only`/`workspace-write`. El bridge nunca escribe en tu
   `~/.codex/config.toml`: sandbox, modelo y las tools de tickets van como
   overrides de cada turno, y el token de tickets viaja en el entorno del proceso,
   nunca en el comando.
@@ -261,7 +269,7 @@ vas a ver la tarjeta **Autorizar** (paso siguiente).
 | `agy_dir` | `~/.gemini/antigravity-cli` | (agy) dónde agy guarda sus conversaciones |
 | `codex_model` | `gpt-5.6-terra` | (codex) modelo. Se fija en **cada** turno, aunque tu `config.toml` de Codex diga otro; `""` = no fijarlo y usar el de Codex |
 | `codex_reasoning` | `medium` | (codex) esfuerzo de razonamiento (`low`, `medium`, `high`, `xhigh`, `max`, `ultra`); `""` = no fijarlo |
-| `codex_sandbox` | `read-only` | (codex) `read-only` (lee y conversa), `workspace-write` (edita dentro de `workdir` y de `add_dirs`) o `danger-full-access` (sin restricciones: **solo en un servidor desechable**) |
+| `codex_sandbox` | `read-only` | (codex) `read-only` (lee y conversa), `workspace-write` (edita dentro de `workdir` y de `add_dirs`) o `danger-full-access` (sin sandbox ni aprobaciones, `--dangerously-bypass-approvals-and-sandbox`: **solo en un servidor desechable**). Siempre con `approval_policy="never"` |
 | `codex_home` | `~/.codex` | (codex) carpeta de Codex con tu sesión iniciada; solo se exporta `CODEX_HOME` si la cambiás |
 | `max_turnos` | `4` | conversaciones simultáneas |
 
