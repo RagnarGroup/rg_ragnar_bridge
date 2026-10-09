@@ -32,6 +32,11 @@ SALIDA_AUTH = 78
 # tool_result grande viaja como UN frame.
 MAX_FRAME = 32 * 1024 * 1024
 
+# Cuanto se sigue leyendo stdout/stderr despues de que el CLI salio. Lo que el
+# CLI escribio antes de salir ya esta en el pipe y se lee enseguida; si pasado
+# esto no hay EOF es que un nieto heredo el pipe y lo mantiene abierto.
+ESPERA_DRENAJE = 5.0
+
 
 # Donde puede escribir el bootstrap dentro de un proyecto, por CLI.
 PREFIJOS_BOOTSTRAP = {
@@ -39,6 +44,18 @@ PREFIJOS_BOOTSTRAP = {
     "agy": (".agent/rules/", ".agent/workflows/"),
     "codex": (".codex/agents/", ".agents/skills/"),
 }
+
+
+async def _salida_del_lider(proceso: asyncio.subprocess.Process) -> int:
+    """Codigo de salida del proceso que lanzamos, apenas EL termina.
+
+    No es `proceso.wait()`: en asyncio (verificado en 3.12/3.13) ese espera
+    ademas a que se cierren sus pipes, y un nieto que heredo stdout los mantiene abiertos
+    (justo el caso que hay que poder cortar, RAG-202). `returncode` se llena
+    cuando el lider sale, sin importar los pipes."""
+    while proceso.returncode is None:
+        await asyncio.sleep(0.05)
+    return proceso.returncode
 
 
 class ErrorFatal(Exception):
@@ -58,6 +75,8 @@ class Bridge:
         self._envio = asyncio.Lock()
         self._procesos: Dict[str, asyncio.subprocess.Process] = {}
         self._tareas: Dict[str, asyncio.Task] = {}
+        # Turnos con un `cancel` que llego antes de que su CLI arrancara.
+        self._cancelados: set = set()
         self.username = "bridge"
 
     # ---- envio
@@ -331,6 +350,8 @@ class Bridge:
         except Exception as e:
             log.exception("El turno %s se rompio.", task_id)
             await self._avisar_error(task_id, f"El bridge fallo en el turno ({type(e).__name__}).")
+        finally:
+            self._cancelados.discard(task_id)
 
     async def _correr_turno(self, task_id: str, run: dict, adaptador) -> None:
         try:
@@ -380,6 +401,13 @@ class Bridge:
 
         self._procesos[task_id] = proceso
         try:
+            if task_id in self._cancelados:
+                # El `cancel` llego mientras el turno se preparaba o el CLI
+                # arrancaba, antes de que hubiera proceso que cortar (RAG-202):
+                # se aplica ya. El `done` lo manda _seguir_proceso, igual que
+                # en un cancel normal.
+                log.info("El turno %s ya estaba cancelado: se corta al arrancar.", task_id)
+                await self._matar_proceso(proceso)
             # Tope por turno (RAG-201): un CLI colgado ocupaba su lugar en
             # `max_turnos` para siempre (solo agy tiene un tope propio).
             await asyncio.wait_for(
@@ -403,7 +431,13 @@ class Bridge:
             self._procesos.pop(task_id, None)
 
     async def _seguir_proceso(self, task_id: str, proceso, traductor) -> None:
-        """Reenvia lo que emite el CLI hasta que termina y manda el `done`."""
+        """Reenvia lo que emite el CLI hasta que termina y manda el `done`.
+
+        El fin del turno lo marca la salida del LIDER, no el EOF de stdout: un
+        nieto (un servidor MCP, un shell en background) que heredo el pipe lo
+        mantiene abierto y `readline` no veria EOF nunca (RAG-202). Al salir
+        el lider se corta su grupo y se le da a la salida un tope corto para
+        terminar de drenarse."""
         stderr_buf = bytearray()
 
         async def leer_stderr():
@@ -417,12 +451,11 @@ class Bridge:
                 if len(stderr_buf) > self.cfg.tope_stderr:
                     del stderr_buf[: len(stderr_buf) - self.cfg.tope_stderr]
 
-        lector_err = asyncio.create_task(leer_stderr())
-        try:
+        async def leer_stdout():
             while True:
                 linea = await proceso.stdout.readline()
                 if not linea:
-                    break
+                    return
                 crudo = linea.decode("utf-8", errors="replace").strip()
                 if not crudo:
                     continue
@@ -440,8 +473,21 @@ class Bridge:
                     # Claude que Ragnar espera (para Claude no toca nada).
                     for raw in traductor.evento(evento):
                         await self.enviar({"type": "event", "task_id": task_id, "raw": raw})
-            codigo = await proceso.wait()
-            await lector_err
+
+        lector_err = asyncio.create_task(leer_stderr())
+        lector_out = asyncio.create_task(leer_stdout())
+        espera = asyncio.ensure_future(_salida_del_lider(proceso))
+        try:
+            hechos, _ = await asyncio.wait({lector_out, espera}, return_when=asyncio.FIRST_COMPLETED)
+            if lector_out in hechos:
+                lector_out.result()  # si fallo (el socket, un traductor), que se vea
+            codigo = await espera
+            # El lider termino: lo que quede de su grupo (nietos) ya no tiene
+            # turno al que servir (RAG-202). Best-effort: el grupo puede estar vacio.
+            self._senal_grupo(proceso, "TERM")
+            await self._drenar(task_id, lector_out, "stdout")
+            await self._drenar(task_id, lector_err, "stderr")
+            await self._rematar_grupo(proceso)
             stderr = bytes(stderr_buf).decode("utf-8", errors="replace")
             for raw in traductor.fin(codigo, stderr):
                 await self.enviar({"type": "event", "task_id": task_id, "raw": raw})
@@ -449,45 +495,116 @@ class Bridge:
                 {"type": "done", "task_id": task_id, "exit_code": codigo, "stderr": stderr}
             )
         finally:
-            lector_err.cancel()
+            for tarea in (lector_out, lector_err, espera):
+                tarea.cancel()
+
+    async def _drenar(self, task_id: str, lector: asyncio.Task, nombre: str) -> None:
+        """Espera a que `lector` termine de leer lo que el CLI dejo en el pipe,
+        con un tope corto: si un nieto lo mantiene abierto, se deja de leer en
+        vez de colgar el turno."""
+        if not lector.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(lector), ESPERA_DRENAJE)
+            except asyncio.TimeoutError:
+                log.warning(
+                    "Turno %s: el CLI salio pero algo de su grupo mantiene %s abierto; se deja de leer.",
+                    task_id,
+                    nombre,
+                )
+                lector.cancel()
+                return
+        lector.result()
 
     # ---- corte de procesos
 
     @staticmethod
-    async def _matar_proceso(proceso: asyncio.subprocess.Process) -> None:
+    def _senal_grupo(proceso: asyncio.subprocess.Process, cual: str) -> bool:
+        """Manda SIGTERM/SIGKILL al grupo del proceso (POSIX; lo lanzamos como
+        lider de su propia sesion, ver `start_new_session`). Devuelve False si
+        ya no queda nadie en el grupo. En Windows no hace nada (no hay grupos)."""
+        if os.name != "posix":
+            return False
+        # `signal.SIGKILL` no existe en Windows: se resuelve solo en POSIX.
+        senal = signal.SIGKILL if cual == "KILL" else signal.SIGTERM
+        try:
+            os.killpg(proceso.pid, senal)
+        except (ProcessLookupError, PermissionError):
+            return False
+        return True
+
+    @staticmethod
+    def _grupo_vivo(proceso: asyncio.subprocess.Process) -> bool:
+        if os.name != "posix":
+            return False
+        try:
+            os.killpg(proceso.pid, 0)
+        except (ProcessLookupError, PermissionError):
+            return False
+        return True
+
+    async def _rematar_grupo(self, proceso: asyncio.subprocess.Process, gracia: float = 3.0) -> None:
+        """Tras el SIGTERM al grupo: si a los `gracia` segundos sigue alguien
+        vivo (un nieto que ignora SIGTERM), SIGKILL."""
+        if os.name != "posix":
+            return
+        limite = asyncio.get_running_loop().time() + gracia
+        while self._grupo_vivo(proceso):
+            if asyncio.get_running_loop().time() >= limite:
+                self._senal_grupo(proceso, "KILL")
+                return
+            await asyncio.sleep(0.05)
+
+    async def _matar_proceso(self, proceso: asyncio.subprocess.Process) -> None:
         # En POSIX se manda al grupo entero (ver el `start_new_session` al
         # lanzarlo en `_turno`), no solo al PID: un hijo que el CLI haya
-        # dejado suelto tambien tiene que morir, o queda huerfano.
-        def _cortar(fuerte: bool) -> None:
-            # `signal.SIGKILL` no existe en Windows: no se puede referenciar
-            # fuera de la rama POSIX aunque sea solo para comparar.
-            if os.name == "posix":
-                os.killpg(proceso.pid, signal.SIGKILL if fuerte else signal.SIGTERM)
-            elif fuerte:
-                proceso.kill()
-            else:
-                proceso.terminate()
+        # dejado suelto tambien tiene que morir, o queda huerfano. Y NO se sale
+        # temprano si el lider ya termino (RAG-202): sus nietos pueden seguir
+        # vivos en el grupo.
+        if os.name == "posix":
+            if not self._senal_grupo(proceso, "TERM"):
+                return
+            try:
+                await asyncio.wait_for(_salida_del_lider(proceso), 5)
+            except asyncio.TimeoutError:
+                self._senal_grupo(proceso, "KILL")
+                await _salida_del_lider(proceso)
+            await self._rematar_grupo(proceso, gracia=2.0)
+            return
 
         if proceso.returncode is not None:
             return
+        # Windows: sin grupos de procesos. `taskkill /T` corta el arbol de
+        # hijos que el CLI tenga vivos (mientras el lider exista); si no se
+        # puede, al menos el PID.
         try:
-            _cortar(False)
-            await asyncio.wait_for(proceso.wait(), 5)
-        except asyncio.TimeoutError:
+            corte = await asyncio.create_subprocess_exec(
+                "taskkill", "/F", "/T", "/PID", str(proceso.pid),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(corte.wait(), 10)
+        except (OSError, asyncio.TimeoutError):
+            pass
+        if proceso.returncode is None:
             try:
-                _cortar(True)
+                proceso.kill()
             except ProcessLookupError:
                 pass
-            await proceso.wait()
-        except ProcessLookupError:
-            pass
+        try:
+            await asyncio.wait_for(_salida_del_lider(proceso), 10)
+        except asyncio.TimeoutError:
+            log.warning("El proceso %s no termino tras cortarlo.", proceso.pid)
 
     async def _matar(self, task_id: str) -> None:
-        # El bucle de _turno ve el EOF de stdout y manda el `done` con el
+        # El bucle de _turno ve la salida del CLI y manda el `done` con el
         # codigo de salida real; aca solo se corta el proceso.
         proceso = self._procesos.get(task_id)
         if proceso is not None:
             await self._matar_proceso(proceso)
+        elif task_id in self._tareas:
+            # El turno existe pero su CLI todavia no arranco: se recuerda y
+            # _correr_turno lo corta apenas lo registre (RAG-202).
+            self._cancelados.add(task_id)
 
     async def _cortar_todo(self) -> None:
         for tarea in list(self._tareas.values()):
@@ -496,9 +613,32 @@ class Bridge:
             await asyncio.gather(*self._tareas.values(), return_exceptions=True)
 
 
-async def ejecutar(cfg: Config, estado_dir: Optional[Path] = None) -> None:
+async def ejecutar(cfg: Config, estado_dir: Optional[Path] = None, senales: bool = False) -> None:
     """Se conecta a Ragnar y reconecta con backoff exponencial hasta que lo
-    frenen. Levanta ErrorFatal si Ragnar rechaza la credencial."""
+    frenen. Levanta ErrorFatal si Ragnar rechaza la credencial.
+
+    Con `senales` (lo usa `ragnar-bridge run`), SIGTERM/SIGINT cancelan esta
+    tarea: al cancelarse se corta cada turno en curso con su grupo de
+    procesos entero. Sin esto, corriendo fuera de systemd un `kill` al bridge
+    dejaba vivos a los CLIs, que se lanzan en su propia sesion (RAG-202)."""
+    instaladas = []
+    if senales and os.name == "posix":
+        loop = asyncio.get_running_loop()
+        tarea = asyncio.current_task()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                loop.add_signal_handler(sig, tarea.cancel)
+                instaladas.append(sig)
+            except (NotImplementedError, RuntimeError, ValueError):
+                pass
+    try:
+        await _reconectar(cfg, estado_dir)
+    finally:
+        for sig in instaladas:
+            asyncio.get_running_loop().remove_signal_handler(sig)
+
+
+async def _reconectar(cfg: Config, estado_dir: Optional[Path]) -> None:
     bridge = Bridge(cfg, estado_dir)
     espera = 1.0
     while True:

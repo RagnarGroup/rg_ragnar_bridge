@@ -403,6 +403,23 @@ def test_cuota_no_deja_huerfanos_de_app_server(tmp_path, monkeypatch):
     assert CodexAdaptador(cfg, tmp_path).cuota("x") is not None
 
     pid = int(pid_file.read_text().strip())
-    time.sleep(0.5)  # darle tiempo al kill del grupo a propagarse
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
+    assert _murio(pid), "el descendiente de app-server sobrevivio al corte del grupo"
+
+
+def _murio(pid: int, espera: float = 5.0) -> bool:
+    """¿Termino `pid`? Un zombie (muerto, esperando que init lo recoja)
+    cuenta como muerto."""
+    limite = time.monotonic() + espera
+    while time.monotonic() < limite:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        try:
+            with open(f"/proc/{pid}/stat", encoding="utf-8") as f:
+                if f.read().rsplit(")", 1)[-1].split()[0] == "Z":
+                    return True
+        except OSError:
+            return True
+        time.sleep(0.1)
+    return False

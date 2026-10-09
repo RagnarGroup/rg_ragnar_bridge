@@ -34,9 +34,15 @@ if argv == ["app-server"]:
         # el solo. Escribe su PID para que el test lo pueda revisar.
         import subprocess as sp
 
+        # En el MISMO grupo que app-server (asi es el bug real: el hijo
+        # ignora que maten solo el PID del padre). Con su propia sesion,
+        # como estaba antes, ningun killpg podria alcanzarlo y el test no
+        # probaba nada (RAG-202: nunca habia corrido en Linux).
         huerfano = sp.Popen(
             [sys.executable, "-c", "import time; time.sleep(30)"],
-            start_new_session=True,
+            stdin=sp.DEVNULL,
+            stdout=sp.DEVNULL,
+            stderr=sp.DEVNULL,
         )
         with open(os.environ["FAKE_CODEX_SPAWN_ORPHAN"], "w", encoding="utf-8") as f:
             f.write(str(huerfano.pid))

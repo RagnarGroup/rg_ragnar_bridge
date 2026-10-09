@@ -119,11 +119,12 @@ def _run(args) -> int:
         print(e, file=sys.stderr)
         return 2
     try:
-        asyncio.run(ejecutar(cfg, (Path(args.config).parent if args.config else None)))
+        asyncio.run(ejecutar(cfg, (Path(args.config).parent if args.config else None), senales=True))
     except ErrorFatal as e:
         print(f"Ragnar rechazo la conexion: {e}", file=sys.stderr)
         return SALIDA_AUTH
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        # SIGTERM/SIGINT: los turnos en curso ya se cortaron al cancelar.
         pass
     return 0
 
