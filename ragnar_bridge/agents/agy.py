@@ -196,7 +196,12 @@ class AgyAdaptador(Adaptador):
         reanudar = bool(conversacion) and conversacion_existe(cfg, conversacion)
 
         permisos = bool(sesion.get("permisos"))
-        if turno.conceder and cfg.agy_permisos == "preguntar" and not permisos:
+        if turno.conceder and turno.conceder != PERMISO_AGY:
+            # Solo la etiqueta exacta que pidio ESTE adaptador destraba agy
+            # (RAG-200): cualquier otro texto (una regla de Claude, algo
+            # inyectado en el [[PERMISO]]) no activa el modo sin permisos.
+            log.warning("Ragnar pidio conceder %r a agy; solo vale %r: se ignora.", turno.conceder, PERMISO_AGY)
+        elif turno.conceder and cfg.agy_permisos == "preguntar" and not permisos:
             # El humano aprobo en la app: desde ahora esta conversacion corre
             # con las herramientas aprobadas.
             permisos = True

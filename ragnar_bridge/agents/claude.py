@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from ..config import Config
-from ..protocolo import Turno, permiso_es_catastrofico
+from ..protocolo import Turno, regla_concedible
 from ..tickets import token_de_tickets, url_mcp_tickets  # noqa: F401  (se re-exportan)
 from .base import Adaptador, Comando
 
@@ -45,14 +45,23 @@ def limpiar_lock_sesion(cfg: Config, session_id: str) -> None:
     shutil.rmtree(Path(cfg.config_dir_abs) / "session-env" / session_id, ignore_errors=True)
 
 
-def conceder_permiso(cfg: Config, tool: str) -> bool:
-    """Suma `tool` a permissions.allow de TU settings.json (el humano ya lo
-    aprobo en la app de Ragnar). Escritura atomica: un JSON a medio escribir
-    tumbaria tambien tus sesiones interactivas. Devuelve False si no se
-    escribio (patron bloqueado o settings ilegible)."""
-    if permiso_es_catastrofico(tool):
+def ruta_permisos(estado_dir: Path, session_id: str) -> Path:
+    """Settings PROPIO de una conversacion: solo `permissions.allow` con lo que
+    el humano aprobo en ella. Se pasa con `--settings` en cada turno de esa
+    conversacion (Claude Code lo suma a las reglas de tus settings)."""
+    return estado_dir / f"claude-permisos-{session_id}.json"
+
+
+def conceder_permiso(estado_dir: Path, session_id: str, tool: str) -> bool:
+    """Suma `tool` a los permisos de ESTA conversacion (el humano ya lo aprobo
+    en la app de Ragnar). Nunca toca tu `~/.claude/settings.json` (RAG-200):
+    antes la regla quedaba para siempre y valia tambien en tus sesiones
+    interactivas. Devuelve False si no se concedio (regla demasiado amplia,
+    ver `regla_concedible`, o archivo ilegible)."""
+    regla = tool.strip()
+    if not regla_concedible(regla):
         return False
-    ruta = Path(cfg.config_dir_abs) / "settings.json"
+    ruta = ruta_permisos(estado_dir, session_id)
     try:
         datos = json.loads(ruta.read_text(encoding="utf-8")) if ruta.exists() else {}
     except (OSError, json.JSONDecodeError):
@@ -60,13 +69,19 @@ def conceder_permiso(cfg: Config, tool: str) -> bool:
     if not isinstance(datos, dict):
         return False
     permisos = datos.setdefault("permissions", {}).setdefault("allow", [])
-    if tool in permisos:
+    if not isinstance(permisos, list):
+        return False
+    if regla in permisos:
         return True
-    permisos.append(tool)
+    permisos.append(regla)
     tmp = ruta.with_name(ruta.name + f".tmp-{os.getpid()}")
     try:
         ruta.parent.mkdir(parents=True, exist_ok=True)
         tmp.write_text(json.dumps(datos, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
         os.replace(tmp, ruta)
     except OSError:
         return False
@@ -132,20 +147,23 @@ class ClaudeAdaptador(Adaptador):
 
     def preparar(self, turno: Turno, username: str) -> Comando:
         cfg = self.cfg
-        if turno.conceder and not conceder_permiso(cfg, turno.conceder):
+        if turno.conceder and not conceder_permiso(self.estado_dir, turno.session_id, turno.conceder):
             # No se corta el turno: sin el permiso Claude vuelve a pedirlo.
             log.warning(
-                "No se pudo conceder el permiso %r (patron bloqueado o settings.json ilegible).",
+                "No se concedio el permiso %r (regla demasiado amplia o archivo de permisos ilegible).",
                 turno.conceder,
             )
         limpiar_lock_sesion(cfg, turno.session_id)
         mcp = escribir_mcp_config(
             cfg, self.estado_dir, username, token_de_tickets(cfg, turno), turno.session_id
         )
-        return construir_comando(cfg, turno, mcp)
+        permisos = ruta_permisos(self.estado_dir, turno.session_id)
+        return construir_comando(cfg, turno, mcp, str(permisos) if permisos.is_file() else None)
 
 
-def construir_comando(cfg: Config, turno: Turno, mcp_config: Optional[str]) -> Comando:
+def construir_comando(
+    cfg: Config, turno: Turno, mcp_config: Optional[str], settings: Optional[str] = None
+) -> Comando:
     """Comando y entorno de UN turno. Si la sesion sigue viva se retoma con
     `prompt`; si no, se abre con `prompt_fallback`, que ya trae el hilo
     anterior rehecho por prompt (ver prompt_con_contexto en Ragnar)."""
@@ -166,6 +184,9 @@ def construir_comando(cfg: Config, turno: Turno, mcp_config: Optional[str]) -> C
         cmd += ["--append-system-prompt", turno.system_append]
     if mcp_config:
         cmd += ["--mcp-config", mcp_config]
+    if settings:
+        # Permisos aprobados en ESTA conversacion (ver conceder_permiso).
+        cmd += ["--settings", settings]
     if cfg.add_dirs:
         cmd += ["--add-dir", *[os.path.abspath(os.path.expanduser(d)) for d in cfg.add_dirs]]
     cmd += ["--resume" if reanudar else "--session-id", turno.session_id, texto]

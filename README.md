@@ -37,7 +37,7 @@ conversación (una conversación sigue con el CLI con el que empezó).
 |---|---|---|---|---|
 | Comando | `claude` | `agy` | `codex` | `hermes` |
 | Sesión de la conversación | `--session-id` / `--resume` (la maneja el CLI) | el bridge recuerda qué conversación de agy es cuál (`agy-estado.json`) | el bridge recuerda qué hilo de Codex es cuál (`codex-estado.json`) y lo retoma con `codex exec resume` | el bridge recuerda qué sesión de Hermes es cuál (`hermes-estado.json`) y la retoma con `hermes chat --resume` |
-| Permisos de herramientas | Ragnar te muestra la tarjeta **Autorizar**; al aprobar, el bridge suma **esa** herramienta a tu `~/.claude/settings.json` | agy **deniega** solo lo que pide permiso (en modo headless no puede preguntar). Ragnar te muestra la misma tarjeta; al aprobar, **esa conversación** corre con las herramientas aprobadas | En `exec` Codex **no puede preguntar**: lo que el sandbox no permite falla. Sin tarjeta **Autorizar**; el alcance lo fija `codex_sandbox` (default `read-only`: lee y conversa) | Probado en vivo corriendo una herramienta de shell en `--oneshot` sin pedir aprobación (a diferencia de agy). Sin tarjeta **Autorizar** por ahora |
+| Permisos de herramientas | Ragnar te muestra la tarjeta **Autorizar**; al aprobar, el bridge suma **esa** herramienta a los permisos de **esa conversación** (`--settings` propio, nunca tu `~/.claude/settings.json`) | agy **deniega** solo lo que pide permiso (en modo headless no puede preguntar). Ragnar te muestra la misma tarjeta; al aprobar, **esa conversación** corre con las herramientas aprobadas | En `exec` Codex **no puede preguntar**: lo que el sandbox no permite falla. Sin tarjeta **Autorizar**; el alcance lo fija `codex_sandbox` (default `read-only`: lee y conversa) | Probado en vivo corriendo una herramienta de shell en `--oneshot` sin pedir aprobación (a diferencia de agy). Sin tarjeta **Autorizar** por ahora |
 | Herramientas de tickets de Ragnar (MCP) | sí (token efímero de quien escribe) | sí, por un puente propio (`ragnar-tickets`, se registra solo) | sí, por el mismo puente, declarado en cada turno (no se escribe nada en tu `config.toml`) | todavía no (RAG-187) |
 | Cuota real de la suscripción | todavía no | sí, desde agy 1.1.11 (`agy -p "/usage"`) | sí (`codex app-server`, límites de 5 h y semanal) | todavía no |
 | Probado con | Claude Code 2.1.170 | agy 1.1.27, 1.2.2 y 1.2.7 | codex-cli 0.157.0 | hermes-agent 0.21.5 |
@@ -215,9 +215,14 @@ vas a ver la tarjeta **Autorizar** (paso siguiente).
 ### Cómo funcionan los permisos
 
 - **Claude Code**: la tarjeta dice qué herramienta pide (ej. `Bash(docker *)`).
-  Al aprobar, el bridge la agrega a `permissions.allow` de tu
-  `~/.claude/settings.json` y retoma el turno. Nunca acepta patrones tipo
-  `Bash(*)` ni `rm -rf /`.
+  Al aprobar, el bridge la agrega a un settings **propio de esa conversación**
+  (`claude-permisos-<sesión>.json`, junto al config del bridge) que se pasa con
+  `--settings` en cada turno de ella, y retoma el turno. Tu
+  `~/.claude/settings.json` no se toca (hasta la 0.7.0 sí: la regla quedaba para
+  siempre y también valía en tus sesiones interactivas, RAG-200). Además rechaza
+  localmente toda regla sin un comando concreto: `Bash` a secas, `Bash(*)`,
+  `Bash(:*)`, `Bash(**)`, intérpretes o envoltorios con comodín
+  (`Bash(sh:*)`, `Bash(python *)`, `Bash(sudo:*)`) y `rm -rf /`.
 - **Antigravity**: agy en modo headless **no puede preguntar** y `permissions.allow`
   de su `settings.json` se ignora ahí (issue #548 de antigravity-cli). La única
   forma de destrabarlo es aprobar *todas* las herramientas, así que el bridge
