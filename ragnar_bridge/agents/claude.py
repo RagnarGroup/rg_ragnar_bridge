@@ -166,8 +166,9 @@ def construir_comando(cfg: Config, turno: Turno, mcp_config: Optional[str]) -> C
         cmd += ["--append-system-prompt", turno.system_append]
     if mcp_config:
         cmd += ["--mcp-config", mcp_config]
-    if cfg.add_dirs:
-        cmd += ["--add-dir", *[os.path.abspath(os.path.expanduser(d)) for d in cfg.add_dirs]]
+    dirs = [os.path.abspath(os.path.expanduser(d)) for d in cfg.add_dirs] + list(turno.dirs_extra)
+    if dirs:
+        cmd += ["--add-dir", *dirs]
     cmd += ["--resume" if reanudar else "--session-id", turno.session_id, texto]
 
     return Comando(cmd, _entorno(cfg))

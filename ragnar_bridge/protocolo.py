@@ -1,8 +1,20 @@
 """Forma de un `run` de Ragnar y reglas que valen para CUALQUIER agente."""
 
+import base64
+import binascii
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
+
+MAX_ADJUNTOS = 4
+MAX_BYTES_ADJUNTO = 4 * 1024 * 1024
+MAX_BYTES_ADJUNTOS = 8 * 1024 * 1024
+# mime -> (extension, como reconocer que los bytes son de ese formato).
+FIRMAS_DE_IMAGEN = {
+    "image/png": ("png", lambda b: b.startswith(b"\x89PNG\r\n\x1a\n")),
+    "image/jpeg": ("jpg", lambda b: b.startswith(b"\xff\xd8\xff")),
+    "image/webp": ("webp", lambda b: b[:4] == b"RIFF" and b[8:12] == b"WEBP"),
+}
 
 # El session_id llega de Ragnar y termina dentro de rutas y de un archivo de
 # estado: se exige forma de UUID para que un valor raro no pueda salirse de
@@ -42,6 +54,12 @@ class Turno:
     # `tickets_token` de la config, como antes.
     tickets_token: Optional[str] = None
     token_de_turno: bool = False
+    # Imagenes que la persona adjunto a este mensaje: (extension, bytes). El
+    # bridge las guarda en disco y le pasa las rutas al agente (ver adjuntos.py).
+    adjuntos: Tuple[Tuple[str, bytes], ...] = ()
+    # Carpetas que el CLI tiene que poder leer ademas de `workdir` en este
+    # turno (hoy, la de los adjuntos ya guardados).
+    dirs_extra: Tuple[str, ...] = ()
 
 
 def validar_run(run: dict) -> Turno:
@@ -71,7 +89,36 @@ def validar_run(run: dict) -> Turno:
         conceder or None,
         tickets_token or None,
         "tickets_token" in run,
+        _validar_adjuntos(run.get("attachments")),
     )
+
+
+def _validar_adjuntos(crudo) -> Tuple[Tuple[str, bytes], ...]:
+    if crudo is None:
+        return ()
+    if not isinstance(crudo, list) or len(crudo) > MAX_ADJUNTOS:
+        raise RunInvalido(f"como mucho {MAX_ADJUNTOS} imagenes por mensaje")
+    adjuntos = []
+    total = 0
+    for item in crudo:
+        mime = item.get("mime") if isinstance(item, dict) else None
+        datos = item.get("data") if isinstance(item, dict) else None
+        if mime not in FIRMAS_DE_IMAGEN or not isinstance(datos, str):
+            raise RunInvalido("adjunto invalido: solo imagenes PNG, JPEG o WebP")
+        try:
+            contenido = base64.b64decode(datos, validate=True)
+        except (binascii.Error, ValueError):
+            raise RunInvalido("adjunto invalido: no es base64")
+        extension, es_del_tipo = FIRMAS_DE_IMAGEN[mime]
+        # El tipo lo declara quien manda; lo que se guarda en disco con esa
+        # extension tiene que serlo de verdad.
+        if not es_del_tipo(contenido):
+            raise RunInvalido("adjunto invalido: el contenido no es la imagen que dice ser")
+        total += len(contenido)
+        if len(contenido) > MAX_BYTES_ADJUNTO or total > MAX_BYTES_ADJUNTOS:
+            raise RunInvalido("las imagenes adjuntas son demasiado pesadas")
+        adjuntos.append((extension, contenido))
+    return tuple(adjuntos)
 
 
 def permiso_es_catastrofico(tool: str) -> bool:

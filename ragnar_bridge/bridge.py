@@ -18,6 +18,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
 
 from . import PROTOCOLO, __version__
+from .adjuntos import guardar as guardar_adjuntos
 from .agents import crear_adaptadores, sondear
 from .archivos import ArchivosEditables, ErrorArchivo
 from .config import Config, ruta_por_defecto
@@ -339,6 +340,7 @@ class Bridge:
             return
 
         try:
+            turno = await asyncio.to_thread(guardar_adjuntos, self.estado_dir, turno)
             comando = adaptador.preparar(turno, self.username)
         except OSError as e:
             await self.enviar(

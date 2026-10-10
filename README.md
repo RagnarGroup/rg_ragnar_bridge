@@ -187,6 +187,21 @@ una instalación existente sin reemplazar su config:
 systemctl --user restart ragnar-bridge.service
 ```
 
+## Imágenes en el chat
+
+Desde la app se pueden adjuntar hasta 4 imágenes (PNG, JPEG o WebP) a un
+mensaje. Los CLIs reciben el mensaje como texto, así que la imagen no viaja
+dentro: el bridge la guarda en `~/.config/ragnar-bridge/adjuntos/<conversación>/`
+y le suma al mensaje la ruta, que el agente abre con su herramienta de lectura
+de archivos. Ragnar solo la transporta, no la guarda.
+
+- El bridge comprueba que cada archivo sea de verdad una imagen del tipo que
+  dice ser, y rechaza el turno si pesa más de 4 MiB (8 MiB entre todas).
+- A Claude Code le da acceso a esa carpeta solo en ese turno (`--add-dir`).
+- Los adjuntos de una conversación que lleva 14 días sin recibir otro se borran.
+
+Requiere `ragnar-bridge` **0.9.0 o posterior**.
+
 ## Editar archivos de configuración desde la app
 
 El botón de **configuración** de la pestaña Agents (al lado de *Mis servidores*)
@@ -361,7 +376,7 @@ Tu configuración (`~/.config/ragnar-bridge/config.json`, con el token del servi
 
 Si preferís, volver a correr el comando de instalación que muestra la app (Paso 4) también actualiza y reinicia.
 
-Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app.
+Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app; **0.9.0** recibe imágenes adjuntas en el chat.
 
 ## Desinstalar
 
