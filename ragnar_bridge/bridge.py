@@ -2,13 +2,13 @@
 services/bridge_hub.py en ragnar_group_back (es la fuente de verdad)."""
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
 import random
 import shutil
 import signal
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -21,6 +21,15 @@ from . import PROTOCOLO, __version__
 from .agents import crear_adaptadores, sondear
 from .config import Config, ruta_por_defecto
 from .protocolo import RunInvalido, validar_run
+from .sincronizar import (  # noqa: F401  (PREFIJOS_BOOTSTRAP se reexporta)
+    PREFIJOS_BOOTSTRAP,
+    ManifiestoInvalido,
+    Registro,
+    aplicar_auto,
+    marcar_aplicados,
+    preparar,
+    resolver_raiz,
+)
 
 log = logging.getLogger("ragnar_bridge")
 
@@ -43,15 +52,14 @@ MARGEN_LINEA = 64 * 1024
 TROZO_LECTURA = 64 * 1024
 
 
-# Donde puede escribir el bootstrap dentro de un proyecto, por CLI.
-PREFIJOS_BOOTSTRAP = {
-    "claude": (".claude/agents/", ".claude/skills/"),
-    "agy": (".agent/rules/", ".agent/workflows/"),
-    "codex": (".codex/agents/", ".agents/skills/"),
-    # hermes NO esta (RAG-187): sus skills viven en ~/.hermes/skills/ (global
-    # del usuario) y no hay una carpeta estandar de agentes/skills POR
-    # PROYECTO que se pueda dar por buena. No se inventa una.
-}
+def plataforma_local() -> str:
+    """Lo que el bridge declara en `platform` [v2]: elige las variantes de un
+    artefacto del catalogo (any + la suya)."""
+    if sys.platform.startswith("win"):
+        return "windows"
+    if sys.platform == "darwin":
+        return "macos"
+    return "linux"
 
 
 async def _salida_del_lider(proceso: asyncio.subprocess.Process) -> int:
@@ -118,6 +126,17 @@ def _leer_bienvenida(crudo) -> dict:
     return mensaje
 
 
+MODOS_BOOTSTRAP = ("preview", "apply", "auto")
+
+
+def validar_cli_y_modo(cli, mode) -> None:
+    from .sincronizar import validar_cli
+
+    validar_cli(cli)
+    if mode not in MODOS_BOOTSTRAP:
+        raise ManifiestoInvalido("CLI o modo de bootstrap inválido.")
+
+
 class ErrorFatal(Exception):
     """Ragnar rechazo la conexion de forma que reintentar no arregla nada
     (token revocado/invalido, protocolo incompatible)."""
@@ -165,6 +184,11 @@ class Bridge:
                     "protocol": PROTOCOLO,
                     "version": __version__,
                     "agents": self.agentes,
+                    # [v2] Solo las CLAVES de project_paths (las rutas no salen
+                    # de este servidor): a que proyectos le llega el bootstrap
+                    # automatico. Y la plataforma, para elegir variantes.
+                    "projects": sorted(self.cfg.project_paths),
+                    "platform": plataforma_local(),
                     # Formato de la 0.2 (un solo agente): un Ragnar viejo solo
                     # lee estos dos.
                     "agent": primero.get("name") or "",
@@ -296,62 +320,32 @@ class Bridge:
             log.exception("No se pudo enviar el resultado del bootstrap.")
 
     def _aplicar_bootstrap(self, mensaje: dict) -> dict:
+        """Frame `bootstrap` (ver bridge_hub.py). preview/apply los pide un
+        humano desde la app; `auto` [v2] lo manda Ragnar solo al publicarse
+        una revision (RAG-217) y nunca pisa un archivo editado a mano."""
         cli = mensaje.get("cli")
         project_key = mensaje.get("project_key")
         mode = mensaje.get("mode")
         overwrite = mensaje.get("overwrite") is True
-        if cli == "hermes":
-            raise ValueError(
-                "Hermes no tiene una carpeta estándar de agentes/skills por proyecto "
-                "(sus skills son globales, en ~/.hermes/skills/): el bootstrap no la soporta."
-            )
-        if cli not in PREFIJOS_BOOTSTRAP or mode not in ("preview", "apply"):
-            raise ValueError("CLI o modo de bootstrap inválido.")
+        validar_cli_y_modo(cli, mode)
         if not isinstance(project_key, str) or project_key not in self.cfg.project_paths:
-            raise ValueError("Este proyecto no tiene una ruta configurada en el bridge.")
+            raise ManifiestoInvalido("Este proyecto no tiene una ruta configurada en el bridge.")
         archivos = mensaje.get("files")
-        if not isinstance(archivos, list) or not archivos or len(archivos) > 200:
-            raise ValueError("El manifiesto debe tener entre 1 y 200 archivos.")
-        if sum(len(str(a.get("content", "")).encode("utf-8")) for a in archivos if isinstance(a, dict)) > 4 * 1024 * 1024:
-            raise ValueError("El manifiesto supera el límite de 4 MiB.")
+        raiz = resolver_raiz(self.cfg.project_paths[project_key])
+        preparados = preparar(cli, raiz, archivos)
+        registro = Registro.en(self.estado_dir)
 
-        raiz = Path(self.cfg.project_paths[project_key]).expanduser().resolve(strict=True)
-        if not raiz.is_dir():
-            raise ValueError("La ruta configurada para el proyecto no es un directorio.")
-        prefijos = PREFIJOS_BOOTSTRAP[cli]
-        preparados = []
-        vistos = set()
-        for archivo in archivos:
-            if not isinstance(archivo, dict):
-                raise ValueError("El manifiesto contiene un elemento inválido.")
-            ruta = archivo.get("path")
-            contenido = archivo.get("content")
-            sha = archivo.get("sha256")
-            if not isinstance(ruta, str) or not ruta.startswith(prefijos):
-                raise ValueError("La ruta no está permitida para ese CLI.")
-            if "\\" in ruta or "\x00" in ruta or PurePosixPath(ruta).is_absolute() or any(
-                parte in ("", ".", "..") for parte in ruta.split("/")
-            ):
-                raise ValueError("La ruta debe ser relativa y no puede salir del proyecto.")
-            if ruta in vistos:
-                raise ValueError("El manifiesto contiene rutas duplicadas.")
-            vistos.add(ruta)
-            if not isinstance(contenido, str) or len(contenido.encode("utf-8")) > 262144:
-                raise ValueError("El contenido de un archivo es inválido o supera 256 KiB.")
-            calculado = hashlib.sha256(contenido.encode("utf-8")).hexdigest()
-            if not isinstance(sha, str) or sha != calculado:
-                raise ValueError(f"La huella de {ruta} no coincide.")
-            destino = raiz.joinpath(*PurePosixPath(ruta).parts)
-            if not destino.resolve(strict=False).is_relative_to(raiz):
-                raise ValueError("Una ruta apunta fuera del proyecto.")
-            actual = raiz
-            for parte in PurePosixPath(ruta).parts:
-                actual = actual / parte
-                if actual.is_symlink():
-                    raise ValueError("No se permiten enlaces simbólicos en rutas de destino.")
-            if destino.exists() and not destino.is_file():
-                raise ValueError("La ruta de destino existe y no es un archivo regular.")
-            preparados.append((ruta, destino, contenido))
+        if mode == "auto":
+            resultados = aplicar_auto(raiz, preparados, registro)
+            conflictos = [r["path"] for r in resultados if r["status"] == "conflict"]
+            if conflictos:
+                log.warning(
+                    "Bootstrap automatico de %s: no se pisaron %d archivos editados a mano: %s",
+                    project_key,
+                    len(conflictos),
+                    ", ".join(conflictos),
+                )
+            return {"ok": True, "mode": mode, "files": resultados}
 
         resultados = [
             {"path": ruta, "status": "conflict" if destino.exists() else "create"}
@@ -369,7 +363,7 @@ class Bridge:
 
         carpeta_respaldo = raiz / ".ragnar-bootstrap-backups"
         if carpeta_respaldo.is_symlink():
-            raise ValueError("La carpeta de respaldos no puede ser un enlace simbólico.")
+            raise ManifiestoInvalido("La carpeta de respaldos no puede ser un enlace simbólico.")
         respaldo = carpeta_respaldo / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         estados = {ruta: destino.exists() for ruta, destino, _ in preparados}
         for ruta, destino, contenido in preparados:
@@ -387,6 +381,9 @@ class Bridge:
             finally:
                 if os.path.exists(temporal):
                     os.unlink(temporal)
+        # Lo que el humano confirmo pasa a ser la ultima revision aplicada: el
+        # proximo `auto` lo puede actualizar sin tomarlo por editado a mano.
+        marcar_aplicados(raiz, preparados, registro)
         return {
             "ok": True,
             "mode": mode,

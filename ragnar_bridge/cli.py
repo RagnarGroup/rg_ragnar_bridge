@@ -9,8 +9,11 @@ from pathlib import Path
 
 from . import __version__
 from .agents import crear_adaptadores
-from .bridge import SALIDA_AUTH, ErrorFatal, ejecutar, probar_conexion
+from .api import VARIABLE_API, VARIABLE_TOKEN_AGENTE, ClienteRagnar, ErrorApi, token_del_entorno, url_api
+from .bridge import SALIDA_AUTH, ErrorFatal, ejecutar, plataforma_local, probar_conexion
+from .catalogo import publicar, sync_once
 from .config import AGENTES, Config, ConfigError, cargar, guardar, ruta_por_defecto
+from .sincronizar import PREFIJOS_BOOTSTRAP, Registro, resumen
 
 _INSTALAR = {
     "claude": "curl -fsSL https://claude.ai/install.sh | bash",
@@ -162,6 +165,64 @@ def _run(args) -> int:
     return 0
 
 
+def _sync(args) -> int:
+    """Pull del catalogo en el PC, sin daemon (RAG-217). Pensado para un hook
+    SessionStart: imprime poco, y un conflicto (archivo editado a mano) no es
+    un error: se avisa y no se pisa."""
+    if not args.once:
+        print(
+            "Por ahora `sync` corre una sola vez: pasá --once. En un servidor, el "
+            "bridge (`ragnar-bridge run`) ya recibe los cambios solo.",
+            file=sys.stderr,
+        )
+        return 2
+    estado = Path(args.estado).expanduser() if args.estado else ruta_por_defecto().parent
+    try:
+        cliente = ClienteRagnar(url_api(args.api), token_del_entorno(), "ragnar-bridge-sync")
+        resultados = sync_once(
+            cliente,
+            args.cli,
+            args.project,
+            args.dir,
+            Registro.en(estado),
+            args.platform or plataforma_local(),
+        )
+    except (ErrorApi, ValueError, OSError) as e:
+        print(f"ragnar-bridge sync: {e}", file=sys.stderr)
+        return 1
+    for r in resultados:
+        if r["status"] in ("written", "updated"):
+            print(f"  {'nuevo' if r['status'] == 'written' else 'actualizado'}: {r['path']}")
+        elif r["status"] == "conflict":
+            print(f"  CONFLICTO (editado a mano, no se pisó): {r['path']}")
+    cuenta = resumen(resultados)
+    print(
+        f"ragnar-bridge sync {args.cli}{' ' + args.project if args.project else ''}: "
+        f"{cuenta['written']} nuevos, {cuenta['updated']} actualizados, "
+        f"{cuenta['unchanged']} sin cambios, {cuenta['conflict']} conflictos."
+    )
+    return 0
+
+
+def _publicar(args) -> int:
+    try:
+        cliente = ClienteRagnar(url_api(args.api), token_del_entorno(), "ragnar-bridge-publicar")
+        resultados = publicar(cliente, args.cli, args.project, args.carpeta)
+    except (ErrorApi, ValueError, OSError) as e:
+        print(f"ragnar-bridge publicar: {e}", file=sys.stderr)
+        return 1
+    publicados = 0
+    for r in resultados:
+        if r["status"] == "published":
+            publicados += 1
+            print(f"  publicado: {r['path']} (revisión {r.get('revision')})")
+        elif r["status"] == "skipped":
+            print(f"  omitido: {r['path']} ({r['motivo']})")
+    sin_cambios = sum(1 for r in resultados if r["status"] == "unchanged")
+    print(f"ragnar-bridge publicar: {publicados} publicados, {sin_cambios} sin cambios.")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="ragnar-bridge", description=__doc__)
     parser.add_argument("--version", action="version", version=__version__)
@@ -192,6 +253,37 @@ def main() -> None:
 
     p_run = sub.add_parser("run", help="conecta con Ragnar (es lo que corre el servicio)")
     p_run.set_defaults(fn=_run)
+
+    clis_bootstrap = sorted(PREFIJOS_BOOTSTRAP)
+    ayuda_api = (
+        f"URL de la API de Ragnar (default ${VARIABLE_API} o https://panel.ragnargroup.app/api/v1). "
+        f"El token personal de agente se lee de ${VARIABLE_TOKEN_AGENTE}, nunca de argv"
+    )
+    p_sync = sub.add_parser(
+        "sync",
+        help="baja del catálogo de Ragnar los agentes/skills de un proyecto y los escribe sin pisar lo editado a mano",
+    )
+    p_sync.add_argument("--once", action="store_true", help="una sola pasada (obligatorio por ahora: no hay modo daemon)")
+    p_sync.add_argument("--cli", required=True, choices=clis_bootstrap)
+    p_sync.add_argument("--project", help="clave del proyecto (ej. RAG); sin ella, solo lo global")
+    p_sync.add_argument("--dir", required=True, help="raíz del proyecto donde escribir (ej. el clon del repo)")
+    p_sync.add_argument("--api", help=ayuda_api)
+    p_sync.add_argument("--platform", choices=("linux", "windows", "macos"), help="default: la de esta máquina")
+    p_sync.add_argument(
+        "--estado",
+        help="carpeta del registro de sha aplicados (default: la del config del bridge)",
+    )
+    p_sync.set_defaults(fn=_sync)
+
+    p_pub = sub.add_parser(
+        "publicar",
+        help="sube al catálogo (solo administrador) los archivos de una carpeta bajo los prefijos permitidos",
+    )
+    p_pub.add_argument("--cli", required=True, choices=clis_bootstrap)
+    p_pub.add_argument("--project", help="clave del proyecto; sin ella se publica como global")
+    p_pub.add_argument("--api", help=ayuda_api)
+    p_pub.add_argument("carpeta", help="raíz que contiene .claude/agents/, .claude/skills/, ...")
+    p_pub.set_defaults(fn=_publicar)
 
     args = parser.parse_args()
     if not args.cmd:
