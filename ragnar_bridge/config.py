@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
-AGENTES = ("claude", "agy", "codex")
+AGENTES = ("claude", "agy", "codex", "hermes")
 AGY_PERMISOS = ("preguntar", "denegar", "auto")
 CODEX_SANDBOXES = ("read-only", "workspace-write", "danger-full-access")
 CODEX_RAZONAMIENTOS = ("low", "medium", "high", "xhigh", "max", "ultra")
@@ -32,7 +32,7 @@ class Config:
     url: str
     token: str
     # Que CLIs maneja este bridge. Por defecto (ninguno de los dos campos)
-    # detecta solo los que esten instalados en el servidor -- claude, agy y/o codex --
+    # detecta solo los que esten instalados en el servidor -- claude, agy, codex y/o hermes --
     # y Ragnar deja elegir entre los que funcionan. `agents` fuerza un
     # subconjunto (["claude"]); `agent` es la forma vieja (un solo CLI), se
     # sigue leyendo para no romper un config de la 0.2.
@@ -44,6 +44,7 @@ class Config:
     claude_cmd: List[str] = field(default_factory=lambda: ["claude"])
     agy_cmd: List[str] = field(default_factory=lambda: ["agy"])
     codex_cmd: List[str] = field(default_factory=lambda: ["codex"])
+    hermes_cmd: List[str] = field(default_factory=lambda: ["hermes"])
     # Modelo de agy (`agy models` los lista). Vacio = el default del CLI.
     agy_model: Optional[str] = None
     # Tope de un turno de agy (--print-timeout, formato Go: 30m, 2h).
@@ -146,7 +147,7 @@ def cargar(ruta: Optional[Path] = None) -> Config:
     for clave in ("codex_model", "codex_reasoning"):
         if campos.get(clave) is None:
             campos.pop(clave, None)
-    for clave in ("claude_cmd", "agy_cmd", "codex_cmd"):
+    for clave in ("claude_cmd", "agy_cmd", "codex_cmd", "hermes_cmd"):
         if isinstance(campos.get(clave), str):
             campos[clave] = [campos[clave]]
     cfg = Config(**campos)

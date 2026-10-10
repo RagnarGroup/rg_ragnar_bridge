@@ -28,6 +28,18 @@ if argv == ["login", "status"]:
 
 if argv == ["app-server"]:
     # JSON-RPC por stdio: forma real de codex-cli 0.157.0.
+    if os.environ.get("FAKE_CODEX_SPAWN_ORPHAN"):
+        # Simula el bug conocido de codex-cli (openai/codex#15379, #47735):
+        # `app-server` deja un descendiente que sobrevive a que lo maten a
+        # el solo. Escribe su PID para que el test lo pueda revisar.
+        import subprocess as sp
+
+        huerfano = sp.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            start_new_session=True,
+        )
+        with open(os.environ["FAKE_CODEX_SPAWN_ORPHAN"], "w", encoding="utf-8") as f:
+            f.write(str(huerfano.pid))
     for linea in sys.stdin:
         msg = json.loads(linea)
         if msg.get("method") == "initialize":

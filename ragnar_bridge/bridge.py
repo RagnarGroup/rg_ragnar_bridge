@@ -8,6 +8,7 @@ import logging
 import os
 import random
 import shutil
+import signal
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -346,20 +347,26 @@ class Bridge:
             return
         traductor = adaptador.traductor(turno)
 
+        kwargs = dict(
+            cwd=self.cfg.workdir_abs,
+            env=comando.env,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            # Una linea de stream-json puede pasar del limite por defecto
+            # (64 KB) -- un tool_result con un archivo o un log grande
+            # viaja como UNA linea; readline() relanza LimitOverrunError y
+            # el turno entero moria.
+            limit=64 * 1024 * 1024,
+        )
+        if os.name == "posix":
+            # Algunos CLIs (conocido en codex-cli: openai/codex#15379,
+            # #47735) dejan hijos que ignoran que les maten solo el PID: se
+            # lanza en su propia sesion para poder matar el grupo entero si
+            # hay que cortar el turno (ver _matar_proceso).
+            kwargs["start_new_session"] = True
         try:
-            proceso = await asyncio.create_subprocess_exec(
-                *comando.argv,
-                cwd=self.cfg.workdir_abs,
-                env=comando.env,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                # Una linea de stream-json puede pasar del limite por defecto
-                # (64 KB) -- un tool_result con un archivo o un log grande
-                # viaja como UNA linea; readline() relanza LimitOverrunError y
-                # el turno entero moria.
-                limit=64 * 1024 * 1024,
-            )
+            proceso = await asyncio.create_subprocess_exec(*comando.argv, **kwargs)
         except OSError as e:
             await self.enviar(
                 {
@@ -433,13 +440,29 @@ class Bridge:
 
     @staticmethod
     async def _matar_proceso(proceso: asyncio.subprocess.Process) -> None:
+        # En POSIX se manda al grupo entero (ver el `start_new_session` al
+        # lanzarlo en `_turno`), no solo al PID: un hijo que el CLI haya
+        # dejado suelto tambien tiene que morir, o queda huerfano.
+        def _cortar(fuerte: bool) -> None:
+            # `signal.SIGKILL` no existe en Windows: no se puede referenciar
+            # fuera de la rama POSIX aunque sea solo para comparar.
+            if os.name == "posix":
+                os.killpg(proceso.pid, signal.SIGKILL if fuerte else signal.SIGTERM)
+            elif fuerte:
+                proceso.kill()
+            else:
+                proceso.terminate()
+
         if proceso.returncode is not None:
             return
         try:
-            proceso.terminate()
+            _cortar(False)
             await asyncio.wait_for(proceso.wait(), 5)
         except asyncio.TimeoutError:
-            proceso.kill()
+            try:
+                _cortar(True)
+            except ProcessLookupError:
+                pass
             await proceso.wait()
         except ProcessLookupError:
             pass

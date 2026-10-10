@@ -4,7 +4,9 @@ seguro y config aislada. Corre contra tests/fake_codex.py, que emite el JSONL de
 
 import asyncio
 import json
+import os
 import sys
+import time
 import uuid
 
 import pytest
@@ -358,3 +360,24 @@ def test_si_app_server_no_existe_la_cuota_es_none_y_no_lanza(tmp_path):
 
     cfg = Config(url="ws://x", token="t", agents=["codex"], codex_cmd=["/no/existe/codex"])
     assert CodexAdaptador(cfg, tmp_path).cuota("x") is None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="matar el grupo de procesos es POSIX-only")
+def test_cuota_no_deja_huerfanos_de_app_server(tmp_path, monkeypatch):
+    """Regresion del incidente 2026-09-28: `app-server` puede dejar un
+    descendiente vivo que ignora que maten solo su PID (openai/codex#15379).
+    Sondear la cuota cada `reprobar_cada` sin esto acumula un proceso por
+    ciclo hasta agotar la RAM del host."""
+    from ragnar_bridge.agents.codex import CodexAdaptador
+
+    (tmp_path / "codex").mkdir()
+    pid_file = tmp_path / "huerfano.pid"
+    monkeypatch.setenv("FAKE_CODEX_SPAWN_ORPHAN", str(pid_file))
+    cfg = Config(url="ws://x", token="t", agents=["codex"], codex_cmd=[sys.executable, FAKE_CODEX], codex_home=str(tmp_path / "codex"))
+
+    assert CodexAdaptador(cfg, tmp_path).cuota("x") is not None
+
+    pid = int(pid_file.read_text().strip())
+    time.sleep(0.5)  # darle tiempo al kill del grupo a propagarse
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)

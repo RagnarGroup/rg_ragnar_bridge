@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import queue
+import signal
 import subprocess
 import sys
 import threading
@@ -141,8 +142,7 @@ class CodexAdaptador(Adaptador):
         """Lanza `codex app-server`, manda los mensajes JSON-RPC y devuelve la
         respuesta con id `esperar`. Un hilo lee el stdout: `select` no sirve con
         pipes en Windows."""
-        proceso = subprocess.Popen(
-            [*self.cmd, "app-server"],
+        kwargs = dict(
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -150,6 +150,13 @@ class CodexAdaptador(Adaptador):
             encoding="utf-8",
             env=self._entorno_base(),
         )
+        if os.name == "posix":
+            # `app-server` puede dejar hijos huerfanos que ignoran el kill de
+            # su propio PID (conocido en codex-cli, p.ej. openai/codex#15379
+            # y #47735): se lanza en su propia sesion para poder matar el
+            # grupo entero en el finally, no solo el proceso.
+            kwargs["start_new_session"] = True
+        proceso = subprocess.Popen([*self.cmd, "app-server"], **kwargs)
         lineas: "queue.Queue[Optional[str]]" = queue.Queue()
 
         def leer() -> None:
@@ -178,8 +185,21 @@ class CodexAdaptador(Adaptador):
                     return respuesta
             return None
         finally:
-            proceso.kill()
-            proceso.wait()
+            self._matar_grupo(proceso)
+
+    @staticmethod
+    def _matar_grupo(proceso: subprocess.Popen) -> None:
+        if os.name == "posix":
+            try:
+                os.killpg(proceso.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            try:
+                proceso.kill()
+            except ProcessLookupError:
+                pass
+        proceso.wait()
 
     # ---- estado propio (session_id de Ragnar -> hilo de Codex)
 

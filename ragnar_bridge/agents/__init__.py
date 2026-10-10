@@ -18,6 +18,10 @@ def _crear(nombre: str, cfg: Config, estado_dir: Path) -> Adaptador:
         from .codex import CodexAdaptador
 
         return CodexAdaptador(cfg, estado_dir)
+    if nombre == "hermes":
+        from .hermes import HermesAdaptador
+
+        return HermesAdaptador(cfg, estado_dir)
     raise ValueError(f"Agente desconocido: {nombre!r}")
 
 

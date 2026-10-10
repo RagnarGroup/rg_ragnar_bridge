@@ -269,7 +269,7 @@ def test_config_rechaza_agente_y_permisos_invalidos(tmp_path):
     ruta.write_text(json.dumps({**base, "agent": "agy"}))
     assert cargar(ruta).agentes_pedidos() == ["agy"]
     ruta.write_text(json.dumps(base))
-    assert cargar(ruta).agentes_pedidos() == ["claude", "agy", "codex"]
+    assert cargar(ruta).agentes_pedidos() == ["claude", "agy", "codex", "hermes"]
 
 
 async def test_probar_conexion_devuelve_el_nombre_del_servidor(ragnar, tmp_path):

@@ -33,14 +33,14 @@ conversación.
 Con **uno** alcanza; con varios podés elegir en el chat con cuál arranca cada
 conversación (una conversación sigue con el CLI con el que empezó).
 
-| | Claude Code | Antigravity (`agy`) | Codex |
-|---|---|---|---|
-| Comando | `claude` | `agy` | `codex` |
-| Sesión de la conversación | `--session-id` / `--resume` (la maneja el CLI) | el bridge recuerda qué conversación de agy es cuál (`agy-estado.json`) | el bridge recuerda qué hilo de Codex es cuál (`codex-estado.json`) y lo retoma con `codex exec resume` |
-| Permisos de herramientas | Ragnar te muestra la tarjeta **Autorizar**; al aprobar, el bridge suma **esa** herramienta a tu `~/.claude/settings.json` | agy **deniega** solo lo que pide permiso (en modo headless no puede preguntar). Ragnar te muestra la misma tarjeta; al aprobar, **esa conversación** corre con las herramientas aprobadas | En `exec` Codex **no puede preguntar**: lo que el sandbox no permite falla. Sin tarjeta **Autorizar**; el alcance lo fija `codex_sandbox` (default `read-only`: lee y conversa) |
-| Herramientas de tickets de Ragnar (MCP) | sí (token efímero de quien escribe) | sí, por un puente propio (`ragnar-tickets`, se registra solo) | sí, por el mismo puente, declarado en cada turno (no se escribe nada en tu `config.toml`) |
-| Cuota real de la suscripción | todavía no | sí, desde agy 1.1.11 (`agy -p "/usage"`) | sí (`codex app-server`, límites de 5 h y semanal) |
-| Probado con | Claude Code 2.1.170 | agy 1.1.27, 1.2.2 y 1.2.7 | codex-cli 0.157.0 |
+| | Claude Code | Antigravity (`agy`) | Codex | Hermes |
+|---|---|---|---|---|
+| Comando | `claude` | `agy` | `codex` | `hermes` |
+| Sesión de la conversación | `--session-id` / `--resume` (la maneja el CLI) | el bridge recuerda qué conversación de agy es cuál (`agy-estado.json`) | el bridge recuerda qué hilo de Codex es cuál (`codex-estado.json`) y lo retoma con `codex exec resume` | el bridge recuerda qué sesión de Hermes es cuál (`hermes-estado.json`) y la retoma con `hermes chat --resume` |
+| Permisos de herramientas | Ragnar te muestra la tarjeta **Autorizar**; al aprobar, el bridge suma **esa** herramienta a tu `~/.claude/settings.json` | agy **deniega** solo lo que pide permiso (en modo headless no puede preguntar). Ragnar te muestra la misma tarjeta; al aprobar, **esa conversación** corre con las herramientas aprobadas | En `exec` Codex **no puede preguntar**: lo que el sandbox no permite falla. Sin tarjeta **Autorizar**; el alcance lo fija `codex_sandbox` (default `read-only`: lee y conversa) | Probado en vivo corriendo una herramienta de shell en `--oneshot` sin pedir aprobación (a diferencia de agy). Sin tarjeta **Autorizar** por ahora |
+| Herramientas de tickets de Ragnar (MCP) | sí (token efímero de quien escribe) | sí, por un puente propio (`ragnar-tickets`, se registra solo) | sí, por el mismo puente, declarado en cada turno (no se escribe nada en tu `config.toml`) | todavía no (RAG-187) |
+| Cuota real de la suscripción | todavía no | sí, desde agy 1.1.11 (`agy -p "/usage"`) | sí (`codex app-server`, límites de 5 h y semanal) | todavía no |
+| Probado con | Claude Code 2.1.170 | agy 1.1.27, 1.2.2 y 1.2.7 | codex-cli 0.157.0 | hermes-agent 0.21.5 |
 
 Si no elegís ninguno en la conversación nueva, Ragnar usa el primero que
 funcione (Claude Code si está listo; si no, Antigravity; si no, Codex).
@@ -140,8 +140,8 @@ curl -fsSL https://raw.githubusercontent.com/gaguilarf/ragnar_bridge/main/instal
   | bash -s -- --url wss://panel.ragnargroup.app/api/v1/bridge/ws --token ragbrg_...
 ```
 
-No hace falta decirle el agente: detecta `claude`, `agy` y/o `codex`. Opciones:
-`--agent claude|agy|codex` (maneja SOLO ese), `--model M` (modelo de agy o de codex con `--agent codex`),
+No hace falta decirle el agente: detecta `claude`, `agy`, `codex` y/o `hermes`. Opciones:
+`--agent claude|agy|codex|hermes` (maneja SOLO ese), `--model M` (modelo de agy o de codex con `--agent codex`),
 `--workdir DIR` (dónde arranca cada turno, por defecto tu home) y `--name N`
 (un segundo bridge distinto en el mismo servidor). El script:
 
@@ -270,10 +270,10 @@ vas a ver la tarjeta **Autorizar** (paso siguiente).
 | campo | default | para qué |
 |---|---|---|
 | `url`, `token` | — | los que muestra la app |
-| `agents` | detecta los instalados | fuerza un subconjunto: `["claude"]`, `["agy"]`, `["codex"]` o varios |
+| `agents` | detecta los instalados | fuerza un subconjunto: `["claude"]`, `["agy"]`, `["codex"]`, `["hermes"]` o varios |
 | `agent` | — | (0.2, un solo agente) se sigue leyendo; usá `agents` |
 | `reprobar_cada` | `120` | cada cuántos segundos re-comprueba qué CLIs están instalados y con sesión |
-| `claude_cmd` / `agy_cmd` / `codex_cmd` | `["claude"]` / `["agy"]` / `["codex"]` | comando del CLI (lista, por si es un wrapper) |
+| `claude_cmd` / `agy_cmd` / `codex_cmd` / `hermes_cmd` | `["claude"]` / `["agy"]` / `["codex"]` / `["hermes"]` | comando del CLI (lista, por si es un wrapper) |
 | `workdir` | `~` | dónde arranca cada turno |
 | `add_dirs` | `[]` | directorios extra accesibles (`--add-dir`) |
 | `config_dir` | `~/.claude` | (claude) carpeta de config del CLI |
@@ -329,7 +329,7 @@ instalador con `--name otro` y el token del segundo.
 | La app dice *«Tu servidor no está conectado»* | el servicio está caído o no sale a internet | `systemctl --user status ragnar-bridge`; `ragnar-bridge doctor` |
 | `doctor`: *«Credencial inválida o revocada»* | token mal copiado o servidor revocado | generá otro servidor en la app y reinstalá |
 | `doctor`: *«Protocolo … no soportado»* | Ragnar es más nuevo que tu bridge | actualizá (más abajo) |
-| `doctor`: *«no encuentro `claude`/`agy`»* | el servicio no ve tu PATH | reinstalá desde una terminal donde el comando funcione, o poné la ruta absoluta en `claude_cmd`/`agy_cmd`/`codex_cmd` |
+| `doctor`: *«no encuentro `claude`/`agy`»* | el servicio no ve tu PATH | reinstalá desde una terminal donde el comando funcione, o poné la ruta absoluta en `claude_cmd`/`agy_cmd`/`codex_cmd`/`hermes_cmd` |
 | El servicio se apaga al cerrar SSH | falta *linger* | como root: `loginctl enable-linger <usuario>` |
 | Instalé con otro token y la app sigue *«Esperando que tu servidor se conecte»* | con el instalador de la 0.2 el servicio ya corría y no se reiniciaba: seguía con la config vieja | volvé a correr el comando de la app (la 0.3 reinicia el servicio), o `systemctl --user restart ragnar-bridge` |
 | La app no ofrece Antigravity (o Claude) | ese CLI no está instalado, o le falta la sesión | `ragnar-bridge doctor` dice cuál; se corrige logueándose y el bridge lo detecta solo |
@@ -392,9 +392,10 @@ pytest
 ```
 
 Las pruebas usan un Ragnar de mentira (`tests/helpers.py`) y dobles del CLI
-(`tests/fake_claude.py`, `tests/fake_agy.py`, `tests/fake_codex.py`); el de agy emite
-los eventos reales capturados de agy 1.1.27 y el de Codex el JSONL de
-`codex exec --json` (codex-cli 0.157.0).
+(`tests/fake_claude.py`, `tests/fake_agy.py`, `tests/fake_codex.py`, `tests/fake_hermes.py`);
+el de agy emite los eventos reales capturados de agy 1.1.27, el de Codex el JSONL de
+`codex exec --json` (codex-cli 0.157.0), y el de Hermes el JSONL real de
+`hermes chat --format stream-json` (hermes-agent 0.21.5).
 
 El protocolo está documentado en `services/bridge_hub.py` de `ragnar_group_back`
 (fuente de verdad); `PROTOCOLO` en `ragnar_bridge/__init__.py` tiene que
