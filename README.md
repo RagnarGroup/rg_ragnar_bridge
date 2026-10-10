@@ -207,7 +207,7 @@ sumás vos desde la app y quedan en `~/.config/ragnar-bridge/archivos-editables.
 - Antes de cada guardado queda una copia en
   `~/.config/ragnar-bridge/respaldos-archivos/` (las últimas 30).
 
-Requiere `ragnar-bridge` **0.7.0 o posterior**. Para apagarlo en un servidor,
+Requiere `ragnar-bridge` **0.8.0 o posterior**. Para apagarlo en un servidor,
 `"archivos_editables": false` en el config.
 
 **Si ya tenías un bridge en ese servidor**, volver a correr el comando (con el
@@ -361,7 +361,7 @@ Tu configuración (`~/.config/ragnar-bridge/config.json`, con el token del servi
 
 Si preferís, volver a correr el comando de instalación que muestra la app (Paso 4) también actualiza y reinicia.
 
-Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** deja editar archivos de configuración desde la app.
+Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app.
 
 ## Desinstalar
 
