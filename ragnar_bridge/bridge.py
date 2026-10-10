@@ -18,6 +18,7 @@ from websockets.exceptions import WebSocketException
 
 from . import PROTOCOLO, __version__
 from .agents import crear_adaptadores, sondear
+from .archivos import ArchivosEditables, ErrorArchivo
 from .config import Config, ruta_por_defecto
 from .protocolo import RunInvalido, validar_run
 
@@ -50,6 +51,7 @@ class Bridge:
         self.cfg = cfg
         self.estado_dir = estado_dir or ruta_por_defecto().parent
         self.adaptadores = crear_adaptadores(cfg, self.estado_dir)
+        self.archivos = ArchivosEditables(cfg, self.estado_dir)
         # Lo que el ultimo sondeo encontro: [{name, cli_version, login}].
         self.agentes: list = []
         self._ws = None
@@ -191,10 +193,29 @@ class Bridge:
             tarea = asyncio.create_task(self._bootstrap(mensaje))
             self._tareas_aux.add(tarea)
             tarea.add_done_callback(self._tareas_aux.discard)
+        elif tipo == "files":
+            tarea = asyncio.create_task(self._archivos(mensaje))
+            self._tareas_aux.add(tarea)
+            tarea.add_done_callback(self._tareas_aux.discard)
         elif tipo == "cancel":
             await self._matar(task_id)
         elif tipo == "error":
             log.warning("Ragnar: %s", mensaje.get("message"))
+
+    async def _archivos(self, mensaje: dict) -> None:
+        request_id = str(mensaje.get("request_id") or "")
+        try:
+            resultado = await asyncio.to_thread(self.archivos.atender, mensaje)
+            if mensaje.get("op") in ("add", "remove", "write"):
+                log.info("Archivos editables: %s %s", mensaje.get("op"), mensaje.get("path"))
+        except ErrorArchivo as error:
+            resultado = {"ok": False, "error": str(error), "code": error.codigo}
+        except Exception as error:
+            resultado = {"ok": False, "error": str(error)[:300], "code": "invalid"}
+        try:
+            await self.enviar({"type": "files_result", "request_id": request_id, "result": resultado})
+        except Exception:
+            log.exception("No se pudo enviar el resultado del pedido de archivos.")
 
     async def _bootstrap(self, mensaje: dict) -> None:
         request_id = str(mensaje.get("request_id") or "")

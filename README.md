@@ -187,6 +187,29 @@ una instalación existente sin reemplazar su config:
 systemctl --user restart ragnar-bridge.service
 ```
 
+## Editar archivos de configuración desde la app
+
+El botón de **configuración** de la pestaña Agents (al lado de *Mis servidores*)
+abre en modo edición archivos de texto de este VPS. Vienen dos rutas fijas, el
+`settings.json` de Claude Code (donde viven sus `permissions.allow`) y su
+`CLAUDE.md` global, las dos dentro de `config_dir`; el resto de las rutas las
+sumás vos desde la app y quedan en `~/.config/ragnar-bridge/archivos-editables.json`.
+
+- Solo lo usa **quien conectó el servidor**, con su sesión de la app: ni otro
+  miembro del grupo (aunque el servidor esté compartido) ni un agente.
+- El bridge solo lee y escribe rutas de esa lista, archivos de texto UTF-8 de
+  hasta 512 KiB. No acepta su propia carpeta de config (ahí está el token),
+  `~/.ssh`, `.credentials.json` ni el `auth.json` de Codex.
+- Un `.json` que no parsea no se guarda, y en el `settings.json` de Claude no se
+  pueden sumar los patrones que el bridge tampoco concede (`Bash(*)`, `rm -rf /`…).
+- Si el archivo cambió en el servidor desde que lo abriste (por ejemplo, el
+  agente sumó un permiso), la app te avisa en vez de pisarlo.
+- Antes de cada guardado queda una copia en
+  `~/.config/ragnar-bridge/respaldos-archivos/` (las últimas 30).
+
+Requiere `ragnar-bridge` **0.7.0 o posterior**. Para apagarlo en un servidor,
+`"archivos_editables": false` en el config.
+
 **Si ya tenías un bridge en ese servidor**, volver a correr el comando (con el
 mismo token o con otro) **reemplaza la config y reinicia el servicio**: es la
 forma de actualizarlo y de cambiar de token. El servidor viejo de la app queda
@@ -254,6 +277,7 @@ vas a ver la tarjeta **Autorizar** (paso siguiente).
 | `workdir` | `~` | dónde arranca cada turno |
 | `add_dirs` | `[]` | directorios extra accesibles (`--add-dir`) |
 | `config_dir` | `~/.claude` | (claude) carpeta de config del CLI |
+| `archivos_editables` | `true` | deja editar desde la app el `settings.json` y el `CLAUDE.md` de Claude y las rutas que sumes; `false` lo apaga |
 | `tickets_token` | — | (claude) tu `ragagt_...`, para las tools de tickets de Ragnar |
 | `agy_model` | — | (agy) modelo; vacío = el default de agy. Ver `agy models` |
 | `agy_timeout` | `30m` | (agy) tope de un turno (`--print-timeout`) |
@@ -337,7 +361,7 @@ Tu configuración (`~/.config/ragnar-bridge/config.json`, con el token del servi
 
 Si preferís, volver a correr el comando de instalación que muestra la app (Paso 4) también actualiza y reinicia.
 
-Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`).
+Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** deja editar archivos de configuración desde la app.
 
 ## Desinstalar
 

@@ -79,6 +79,10 @@ class Config:
     # Directorios extra a los que el CLI puede llegar fuera de `workdir` (flag
     # --add-dir). Vacio = solo workdir.
     add_dirs: List[str] = field(default_factory=list)
+    # Deja que quien conecto este servidor edite desde la app de Ragnar su
+    # settings.json y CLAUDE.md de Claude Code y las rutas que sume ahi (ver
+    # archivos.py). `false` lo apaga: el bridge rechaza todo pedido de archivos.
+    archivos_editables: bool = True
     # Carpeta de config/credenciales del CLI. Por defecto la de siempre
     # (~/.claude): el bridge usa TU sesion ya iniciada, no pide login.
     config_dir: str = "~/.claude"
@@ -155,6 +159,8 @@ def cargar(ruta: Optional[Path] = None) -> Config:
         for k, v in cfg.project_paths.items()
     ):
         raise ConfigError("'project_paths' debe mapear claves de proyecto a directorios.")
+    if not isinstance(cfg.archivos_editables, bool):
+        raise ConfigError("'archivos_editables' tiene que ser true o false.")
     for nombre in cfg.agentes_pedidos():
         if nombre not in AGENTES:
             raise ConfigError(
