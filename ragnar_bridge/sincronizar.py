@@ -1,19 +1,9 @@
-"""Escritura de agentes/skills del catalogo de Ragnar en un proyecto local
-(RAG-155/217). Lo usan las tres puntas: el frame `bootstrap` del bridge
-(preview/apply/auto), `ragnar-bridge sync --once` en el PC y
-`ragnar-bridge publicar`.
+"""Escritura de agentes/skills del catalogo de Ragnar en un proyecto local, para el
+frame `bootstrap` (preview/apply/auto), `sync --once` y `publicar`.
 
-Politica `auto` (la de los avisos de Ragnar y la de `sync`):
-* el archivo no existe -> se escribe ("written");
-* ya tiene ese contenido -> nada ("unchanged");
-* no se toco desde la ultima revision que se aplico aca (su sha coincide con
-  el del registro local) -> se actualiza ("updated");
-* cualquier otro caso (editado a mano, o existia antes sin pasar por Ragnar)
-  -> NO se pisa: "conflict".
-
-El registro de sha aplicados vive en el directorio de estado del bridge (no en
-el proyecto), un JSON {raiz_del_proyecto: {ruta: sha256}}.
-"""
+Politica `auto`: escribe lo que no existe, actualiza lo que no se toco desde la
+ultima revision aplicada y nunca pisa lo editado a mano ("conflict"). El registro
+de sha aplicados vive en el directorio de estado del bridge, no en el proyecto."""
 
 import hashlib
 import json
@@ -22,14 +12,10 @@ import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Dict, Iterable, List, Optional, Tuple
 
-# Donde puede escribir el bootstrap dentro de un proyecto, por CLI.
 PREFIJOS_BOOTSTRAP = {
     "claude": (".claude/agents/", ".claude/skills/"),
     "agy": (".agent/rules/", ".agent/workflows/"),
     "codex": (".codex/agents/", ".agents/skills/"),
-    # hermes NO esta (RAG-187): sus skills viven en ~/.hermes/skills/ (global
-    # del usuario) y no hay una carpeta estandar de agentes/skills POR
-    # PROYECTO que se pueda dar por buena. No se inventa una.
 }
 
 MAX_ARCHIVOS = 200
@@ -42,7 +28,7 @@ Preparado = Tuple[str, Path, str]
 
 
 class ManifiestoInvalido(ValueError):
-    """El manifiesto no cumple las reglas: no se escribe NADA."""
+    pass
 
 
 def sha256_texto(contenido: str) -> str:
@@ -68,7 +54,6 @@ def validar_cli(cli) -> Tuple[str, ...]:
 
 
 def ruta_permitida(cli: str, ruta) -> bool:
-    """¿`ruta` (relativa, con '/') cae bajo un prefijo de ese CLI y no se sale?"""
     if not isinstance(ruta, str) or not ruta.startswith(PREFIJOS_BOOTSTRAP.get(cli, ())):
         return False
     if "\\" in ruta or "\x00" in ruta or PurePosixPath(ruta).is_absolute():
@@ -84,9 +69,6 @@ def resolver_raiz(carpeta) -> Path:
 
 
 def preparar(cli, raiz: Path, archivos) -> List[Preparado]:
-    """Valida el manifiesto entero ANTES de escribir nada: CLI, topes, rutas
-    bajo los prefijos permitidos, sin traversal ni symlinks, y la huella de
-    cada contenido. Devuelve [(ruta, destino, contenido)]."""
     prefijos = validar_cli(cli)
     if not isinstance(archivos, list) or not archivos or len(archivos) > MAX_ARCHIVOS:
         raise ManifiestoInvalido("El manifiesto debe tener entre 1 y 200 archivos.")
@@ -147,9 +129,6 @@ def escribir_atomico(destino: Path, contenido: str) -> None:
 
 
 class Registro:
-    """sha256 de la ultima revision que se escribio aca, por proyecto y ruta.
-    Es lo que permite distinguir "no lo toco nadie" de "lo editaron a mano"."""
-
     def __init__(self, archivo: Path):
         self.archivo = Path(archivo)
         self._datos: Dict[str, Dict[str, str]] = {}
@@ -188,7 +167,6 @@ class Registro:
 
 
 def aplicar_auto(raiz: Path, preparados: Iterable[Preparado], registro: Registro) -> List[dict]:
-    """Politica `auto` (ver el docstring del modulo). Guarda el registro."""
     resultados = []
     for ruta, destino, contenido in preparados:
         nuevo = sha256_texto(contenido)
@@ -211,8 +189,6 @@ def aplicar_auto(raiz: Path, preparados: Iterable[Preparado], registro: Registro
 
 
 def marcar_aplicados(raiz: Path, preparados: Iterable[Preparado], registro: Registro) -> None:
-    """Despues de un `apply` (confirmado por el humano): lo escrito pasa a ser
-    la ultima revision aplicada, asi el proximo `auto` lo puede actualizar."""
     for ruta, _destino, contenido in preparados:
         registro.marcar(raiz, ruta, sha256_texto(contenido))
     registro.guardar()

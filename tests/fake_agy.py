@@ -1,14 +1,11 @@
-"""Doble de `agy` para las pruebas. Emite los MISMOS eventos que emite agy 1.1.27
-(capturados a mano contra el CLI real: init / step_update / result) y guarda su
-argv en $AGY_FAKE_DIR/argvs.jsonl para que el test compruebe que flags recibio.
+"""Doble de `agy` para las pruebas: emite init/step_update/result y guarda su argv
+en $AGY_FAKE_DIR/argvs.jsonl.
 
 Guiones segun el prompt (`-p=<prompt>`):
-  TOOL          -> pide ejecutar un comando; sin --dangerously-skip-permissions
-                   agy lo DENIEGA (denied_actions), con el flag lo ejecuta.
+  TOOL          -> pide un comando; lo deniega salvo con --dangerously-skip-permissions.
   STATUS_ERROR  -> result con status distinto de SUCCESS.
   FAIL          -> sale con codigo 3 sin emitir result.
-  SLEEP         -> se cuelga.
-"""
+  SLEEP         -> se cuelga."""
 
 import json
 import os
@@ -18,7 +15,6 @@ import uuid
 
 argv = sys.argv[1:]
 
-# Sondeos del bridge (no son turnos).
 if argv == ["--version"]:
     print(os.environ.get("FAKE_AGY_VERSION", "fake-agy 1.0"))
     sys.exit(0)
@@ -29,8 +25,6 @@ if argv == ["models"]:
 prompt = next(a for a in argv if a.startswith("-p="))[3:]
 base = os.environ["AGY_FAKE_DIR"]
 
-# Comando de solo lectura de agy >= 1.1.11: no arranca un turno (forma real
-# capturada de agy 1.2.11).
 if prompt == "/usage":
     with open(os.path.join(base, "usage-llamado"), "a"):
         pass

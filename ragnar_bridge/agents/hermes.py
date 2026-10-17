@@ -1,36 +1,14 @@
-"""Hermes Agent (`hermes`, github.com/NousResearch/hermes-agent).
+"""Adaptador de Hermes Agent (`hermes`).
 
-Diferencias con Claude Code que el adaptador absorbe (verificado en vivo contra
-hermes-agent 0.21.5, RAG-187; ver tests/test_hermes.py para las formas reales
-de los eventos):
-
-* Un turno es `hermes chat --query=<prompt> --oneshot --format stream-json`
-  (o con `--resume <session_id>` para seguir una conversacion) y emite JSONL
-  propio (`system`/`tool_use`/`tool_result`/`text`/`result`): `TraductorHermes`
-  lo convierte al formato de Claude que Ragnar espera.
-* `--query=<prompt>` (no `-q <prompt>`, ni via stdin): el bridge no le escribe
-  nada al stdin del proceso (queda en DEVNULL), asi que `--query-file -` no
-  sirve aca aunque el propio `hermes` lo recomiende para texto arbitrario. La
-  forma pegada (`=`) evita que un prompt que empiece con "-" se lea como flag,
-  igual que `-p=<prompt>` en agy.
-* No hay `--session-id`: Hermes asigna el `session_id` y lo informa en el
-  evento `system` (subtype `init`) y de nuevo en `result`. Se guarda la
-  correspondencia session_id(Ragnar) -> session_id(Hermes) en
-  `hermes-estado.json`; los turnos siguientes usan `--resume`.
-* No hay `--append-system-prompt`: las instrucciones de Ragnar se anteponen al
-  prompt del primer turno de cada conversacion (despues viven en la sesion).
-* `tool_use`/`tool_result` no traen un id que los correlacione (a diferencia
-  de Claude/Codex): se generan ids propios por turno, emparejados en el orden
-  en que llegan (Hermes corre las herramientas de a una, sin interlevar).
-* Sin `--yolo`: probado en vivo que un turno con una herramienta de shell
-  corre igual en modo `--oneshot` sin pedir aprobacion (a diferencia de agy,
-  que en headless deniega solo). Si en el futuro aparece una herramienta que
-  si la pide, ahi se decide como Ragnar la concede -- no se fuerza el bypass
-  de entrada como con Codex/agy.
-* Tickets de Ragnar (MCP): fuera de alcance de este adaptador (ver RAG-187).
-  Hermes corre sin las tools de tickets hasta que se decida como pasarle un
-  token por turno.
-"""
+* Un turno es `hermes chat --query=<prompt> --oneshot --format stream-json` (con
+  `--resume` para seguir); `TraductorHermes` convierte su JSONL al de Claude.
+* `--query=` va pegado y sin stdin (queda en DEVNULL): un prompt que empiece con
+  "-" no se lee como flag.
+* Hermes asigna el session_id: se guarda en `hermes-estado.json` y se usa en `--resume`.
+* Sin `--append-system-prompt`: las instrucciones van antepuestas al primer prompt.
+* `tool_use`/`tool_result` no traen id: se generan por turno, emparejados en orden.
+* Corre sus herramientas sin pedir aprobacion: no hay permisos que conceder.
+* Sin MCP de tickets."""
 
 import json
 import logging
@@ -54,24 +32,11 @@ class HermesAdaptador(Adaptador):
         return self.cfg.hermes_cmd
 
     def sesion_iniciada(self) -> Optional[bool]:
-        """A diferencia de `codex login status`/`agy models`, Hermes no tiene
-        un comando de solo-estado que distinga "listo para conversar" de
-        "hay algo que mejorar". Probado en vivo (RAG-187): `hermes doctor`
-        devuelve exit 1 por cosas irrelevantes para un turno (una dependencia
-        opcional del navegador con una vulnerabilidad npm, proveedores que
-        esta instancia ni usa) en una instalacion que SI podia conversar
-        normalmente -- `False` ahi seria un aviso equivocado. Mejor no decir
-        nada que decir algo mal."""
         return None
 
     def cuota(self, version: str) -> Optional[dict]:
-        """Hermes no expone un comando de solo lectura para leer limites de
-        cuota (a diferencia de `codex app-server`/`agy -p=/usage`), y el
-        proveedor detras de una instancia puede ni ser uno con cuota por
-        ventana (proxy/custom). Sin dato de cortesia por ahora."""
         return None
 
-    # ---- estado propio (session_id de Ragnar -> session_id de Hermes)
 
     @property
     def _ruta_estado(self) -> Path:
@@ -100,15 +65,9 @@ class HermesAdaptador(Adaptador):
         sesiones.setdefault(session_id, {}).update(campos)
         self._guardar(sesiones)
 
-    # ---- comando
 
     def preparar(self, turno: Turno, username: str) -> Comando:
         if turno.conceder:
-            # Hermes no tiene capa de permisos que conceder: en --oneshot ya
-            # corre sus herramientas sin preguntar. Si Ragnar manda un
-            # `conceder` es que le ofrecio al humano una tarjeta "Autorizar"
-            # que aca no cambia nada; se deja constancia en vez de tragarlo
-            # en silencio (RAG-187).
             log.warning(
                 "Ragnar pidio conceder %r a Hermes, que no tiene permisos que conceder "
                 "(corre sus herramientas sin pedir aprobacion): no cambia nada en este turno.",
@@ -142,23 +101,10 @@ class HermesAdaptador(Adaptador):
 
 
 class TraductorHermes(Traductor):
-    """Convierte el JSONL de `hermes chat --format stream-json` al stream-json
-    de Claude:
-
-      system (subtype init)     -> (guarda session_id)
-      tool_use                  -> assistant / tool_use
-      tool_result                -> user / tool_result
-      text                        -> stream_event / content_block_delta / text_delta
-      result                       -> result (con usage)
-    """
-
     def __init__(self, adaptador: HermesAdaptador, turno: Turno):
         self._ad = adaptador
         self._turno = turno
         self.session_id: Optional[str] = None
-        # tool_use/tool_result de Hermes no traen un id compartido: se generan
-        # acá y se emparejan en orden de llegada (Hermes corre las
-        # herramientas de a una, nunca en paralelo dentro de un turno).
         self._pendientes: List[str] = []
         self._contador = 0
 

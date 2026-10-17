@@ -1,11 +1,8 @@
-"""Archivos de configuracion que el dueno del servidor edita desde la app de
-Ragnar (boton de configuracion de la pestana Agents): el settings.json de
-Claude Code, su CLAUDE.md global y las rutas que el sume a mano.
+"""Archivos de configuracion que el dueno del servidor edita desde la app de Ragnar:
+el settings.json y el CLAUDE.md global de Claude Code mas las rutas que sume.
 
-Solo se lee y se escribe lo que esta en la lista: las dos rutas fijas mas las
-que se agregaron, guardadas en <estado>/archivos-editables.json. Ragnar manda
-la ruta y este modulo decide; nunca al reves.
-"""
+Solo se lee y escribe lo que esta en la lista (<estado>/archivos-editables.json):
+Ragnar manda la ruta pero este modulo decide."""
 
 import hashlib
 import json
@@ -24,15 +21,11 @@ MAX_RUTAS = 50
 MAX_LARGO_RUTA = 1024
 RESPALDOS_A_CONSERVAR = 30
 
-# Guardan credenciales: ni con la ruta agregada a mano se leen ni se pisan.
 _NOMBRES_PROHIBIDOS = (".credentials.json",)
 _RAICES_PROHIBIDAS = ("/proc", "/sys", "/dev")
 
 
 class ErrorArchivo(Exception):
-    """El pedido no se puede cumplir. `codigo` le dice a Ragnar que responder:
-    invalid | forbidden | not_found | conflict."""
-
     def __init__(self, mensaje: str, codigo: str = "invalid"):
         super().__init__(mensaje)
         self.codigo = codigo
@@ -48,7 +41,6 @@ class ArchivosEditables:
         self.estado_dir = Path(estado_dir)
         self._lista = self.estado_dir / "archivos-editables.json"
 
-    # ---- la lista
 
     def fijas(self) -> List[Path]:
         base = Path(self.cfg.config_dir_abs)
@@ -87,12 +79,9 @@ class ArchivosEditables:
             ],
         }
 
-    # ---- validacion de rutas
 
     @staticmethod
     def _real(ruta: Path) -> Path:
-        # Se identifica cada archivo por su ruta real: un enlace simbolico y su
-        # destino son la misma entrada, y lo prohibido no se alcanza por un enlace.
         return Path(os.path.realpath(ruta))
 
     def _normalizar(self, ruta) -> Path:
@@ -123,7 +112,6 @@ class ArchivosEditables:
             raise ErrorArchivo("Ese archivo guarda credenciales y no se edita desde la app.", "forbidden")
         return real
 
-    # ---- operaciones
 
     def agregar(self, ruta) -> dict:
         real = self._normalizar(ruta)
@@ -178,9 +166,6 @@ class ArchivosEditables:
             raise ErrorArchivo(f"El contenido supera el limite de {MAX_BYTES // 1024} KiB.")
 
         anterior = self._bytes(real) if real.exists() else None
-        # El agente tambien escribe estos archivos (un permiso concedido suma
-        # una linea a settings.json): si cambio desde que la app lo leyo, se
-        # avisa en vez de pisarlo.
         if (_huella(anterior) if anterior is not None else None) != (sha256_base or None):
             raise ErrorArchivo(
                 "El archivo cambio en el servidor desde que lo abriste. Volve a cargarlo.", "conflict"
@@ -206,8 +191,6 @@ class ArchivosEditables:
         try:
             datos = json.loads(contenido)
         except json.JSONDecodeError as e:
-            # Un settings.json a medio escribir tumba tambien las sesiones
-            # interactivas del CLI.
             raise ErrorArchivo(f"No es JSON valido (linea {e.lineno}, columna {e.colno}): {e.msg}.")
         if real != self.fijas()[0]:
             return
@@ -230,7 +213,6 @@ class ArchivosEditables:
         for viejo in sorted(p for p in carpeta.iterdir() if p.is_dir())[:-RESPALDOS_A_CONSERVAR]:
             shutil.rmtree(viejo, ignore_errors=True)
 
-    # ---- frame `files` de Ragnar
 
     def atender(self, mensaje: dict) -> dict:
         if not self.cfg.archivos_editables:

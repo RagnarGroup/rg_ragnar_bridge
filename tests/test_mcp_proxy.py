@@ -1,5 +1,5 @@
-"""mcp_proxy: el puente stdio -> HTTP que le da a agy las tools de tickets con el
-token de CADA turno (agy no puede llevarlo en su archivo global de MCP)."""
+"""mcp_proxy: reenvio stdio -> HTTP con el token de cada turno, redirecciones,
+respuestas SSE y errores, y su registro en agy."""
 
 import io
 import json
@@ -16,9 +16,6 @@ from ragnar_bridge.protocolo import validar_run
 
 
 class _Ragnar(BaseHTTPRequestHandler):
-    """Un MCP falso: /mcp redirige a /mcp/ (como Starlette) y /mcp/ contesta
-    como JSON o como SSE segun `modo`, anotando lo que recibe."""
-
     visto: list = []
     modo = "json"
 
@@ -113,7 +110,7 @@ def test_no_sigue_una_redireccion_a_otro_servidor():
     try:
         puente = Puente(f"http://127.0.0.1:{srv.server_address[1]}/mcp", "ragagt_turno", "agy")
         r = _correr(puente, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-        assert "307" in r[0]["error"]["message"]  # no fue a otro.invalid con el token
+        assert "307" in r[0]["error"]["message"]
     finally:
         srv.shutdown()
 
@@ -130,13 +127,10 @@ def test_sin_token_es_un_servidor_mcp_valido_y_vacio():
     assert r[1] == {"jsonrpc": "2.0", "id": 2, "result": {"tools": []}}
 
 
-# ---- el adaptador de agy: el token de cada turno va en el entorno de ESE turno
-
-
 def _agy(tmp_path) -> AgyAdaptador:
     cfg = Config(url="wss://panel.ejemplo.app/api/v1/bridge/ws", token="ragbrg_x", agents=["agy"], agy_dir=str(tmp_path))
     adaptador = AgyAdaptador(cfg, tmp_path)
-    adaptador._mcp_listo = True  # no lanzar `agy mcp add` de verdad
+    adaptador._mcp_listo = True
     return adaptador
 
 
@@ -162,7 +156,7 @@ def test_sin_token_de_turno_el_entorno_no_hereda_uno_viejo(tmp_path, monkeypatch
 def test_si_agy_no_acepta_el_mcp_el_turno_sigue_sin_tickets(tmp_path):
     agy = _agy(tmp_path)
     agy._mcp_listo = False
-    agy._mcp_intentos = 3  # ya agoto los intentos de registro
+    agy._mcp_intentos = 3
     env = agy.entorno(_turno(tickets_token="ragagt_ana"))
     assert "RAGNAR_TICKETS_TOKEN" not in env
 

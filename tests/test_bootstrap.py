@@ -1,3 +1,6 @@
+"""Frame `bootstrap`: preview sin escribir, apply con confirmacion y respaldo, y
+rechazo de rutas fuera de la lista o de contenido con sha alterado."""
+
 import hashlib
 
 import pytest
@@ -76,7 +79,6 @@ def test_codex_escribe_solo_en_sus_carpetas(tmp_path):
     assert [f["status"] for f in result["files"]] == ["written", "written"]
     assert (root / ".agents/skills/revisar/SKILL.md").read_text() == "y"
 
-    # Las carpetas de otro CLI, o el config.toml de Codex, no.
     for path in (".claude/agents/a.md", ".agent/rules/a.md", ".codex/config.toml", ".codex/agents/../config.toml"):
         with pytest.raises(ValueError):
             bridge._aplicar_bootstrap({"cli": "codex", "project_key": "RAG", "mode": "preview", "files": [_manifest(path, "x")]})

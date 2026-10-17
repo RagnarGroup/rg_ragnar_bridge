@@ -1,4 +1,4 @@
-"""RAG-217: bootstrap `auto` (aviso de Ragnar), `sync --once` y `publicar`."""
+"""Bootstrap `auto` desde Ragnar, `sync --once` y `publicar`, incluidos sus comandos de CLI."""
 
 import asyncio
 import hashlib
@@ -46,9 +46,6 @@ def repo(tmp_path):
     return root
 
 
-# ---- modo auto (el aviso de Ragnar al publicar)
-
-
 def test_auto_escribe_lo_nuevo_y_actualiza_lo_no_tocado(tmp_path, repo):
     bridge = _bridge(tmp_path, repo)
     ruta = ".claude/agents/rafael.md"
@@ -57,15 +54,12 @@ def test_auto_escribe_lo_nuevo_y_actualiza_lo_no_tocado(tmp_path, repo):
     assert primero == {"ok": True, "mode": "auto", "files": [{"path": ruta, "status": "written"}]}
     assert (repo / ruta).read_text() == "v1"
 
-    # Revision nueva y el archivo no se toco: se actualiza.
     segundo = _auto(bridge, _archivo(ruta, "v2"))
     assert segundo["files"] == [{"path": ruta, "status": "updated"}]
     assert (repo / ruta).read_text() == "v2"
 
-    # La misma revision otra vez: nada.
     assert _auto(bridge, _archivo(ruta, "v2"))["files"] == [{"path": ruta, "status": "unchanged"}]
 
-    # El registro vive en el directorio de estado, no en el proyecto.
     registro = json.loads((tmp_path / "estado" / NOMBRE_REGISTRO).read_text())
     assert registro == {str(repo.resolve()): {ruta: _sha("v2")}}
     assert not (repo / NOMBRE_REGISTRO).exists()
@@ -84,7 +78,6 @@ def test_auto_nunca_pisa_un_archivo_editado_a_mano(tmp_path, repo):
         {"path": ".claude/agents/nuevo.md", "status": "written"},
     ]
     assert (repo / ruta).read_text() == "mi version"
-    # Y sigue siendo conflicto en la proxima: el registro no se movio.
     assert _auto(bridge, _archivo(ruta, "v3"))["files"] == [{"path": ruta, "status": "conflict"}]
 
 
@@ -147,7 +140,6 @@ async def test_el_auth_declara_proyectos_y_plataforma(conectado, ragnar, repo):
     assert ragnar.auth_frame["protocol"] == PROTOCOLO == 2
     assert ragnar.auth_frame["projects"] == ["RAG", "SGA"]
     assert ragnar.auth_frame["platform"] in ("linux", "windows", "macos")
-    # Las rutas locales no salen del servidor.
     assert str(repo) not in json.dumps(ragnar.auth_frame)
 
 
@@ -172,12 +164,9 @@ async def test_el_frame_bootstrap_auto_responde_por_el_socket(conectado, ragnar,
     assert (repo / ".claude/agents/a.md").read_text() == "x"
 
 
-# ---- un Ragnar REST de mentira para sync y publicar
-
-
 class _Catalogo:
     def __init__(self):
-        self.artefactos = []  # dicts como BootstrapArtifactOut
+        self.artefactos = []
         self.posts = 0
         self.autorizaciones = set()
 
@@ -263,7 +252,6 @@ def test_sync_once_contra_un_servidor_falso(api, tmp_path, repo):
     ]
     assert (repo / ".claude/agents/rafael.md").read_text() == "v1"
 
-    # Se edita a mano el skill y se publica una revision de los dos.
     (repo / ".claude/skills/s/SKILL.md").write_text("mio")
     api.agregar({"artifact_key": "claude/RAG/.claude/agents/rafael.md", "title": "r", "cli": "claude", "project_key": "RAG", "platform": "any", "relative_path": ".claude/agents/rafael.md", "content": "v2"})
     api.agregar({"artifact_key": "claude/_global/.claude/skills/s/SKILL.md", "title": "s", "cli": "claude", "project_key": None, "platform": "any", "relative_path": ".claude/skills/s/SKILL.md", "content": "global v2"})
@@ -290,7 +278,6 @@ def test_publicar_es_idempotente(api, repo):
     (repo / ".claude/agents/rafael.md").write_text("rafael")
     (repo / ".claude/skills/revisar").mkdir(parents=True)
     (repo / ".claude/skills/revisar/SKILL.md").write_text("skill")
-    # Fuera de los prefijos: ni se mira.
     (repo / ".claude/settings.json").write_text("{}")
     (repo / "CLAUDE.md").write_text("del repo")
     (repo / ".claude/agents/vacio.md").write_text("")
@@ -307,12 +294,10 @@ def test_publicar_es_idempotente(api, repo):
         "claude/RAG/.claude/skills/revisar/SKILL.md",
     }
 
-    # Sin cambios: ninguna revision nueva.
     segundo = publicar(_cliente(api), "claude", "RAG", repo)
     assert api.posts == 2
     assert [r["status"] for r in segundo if r["path"] == ".claude/agents/rafael.md"] == ["unchanged"]
 
-    # Cambia un archivo: solo ese.
     (repo / ".claude/agents/rafael.md").write_text("rafael v2")
     tercero = publicar(_cliente(api), "claude", "RAG", repo)
     assert api.posts == 3
@@ -335,9 +320,6 @@ def test_publicar_no_sigue_symlinks(repo, tmp_path):
     (repo / ".claude/agents/link.md").symlink_to(afuera)
     encontrados, omitidos = recolectar("claude", repo)
     assert encontrados == [] and omitidos == [{"path": ".claude/agents/link.md", "motivo": "enlace simbólico"}]
-
-
-# ---- la linea de comandos
 
 
 def _main(monkeypatch, *argv):
@@ -364,7 +346,6 @@ def test_cli_sync_sin_once_o_sin_token_falla(api, repo, monkeypatch, capsys):
     assert _main(monkeypatch, "sync", "--cli", "claude", "--dir", str(repo), "--api", api.url) == 2
     assert _main(monkeypatch, "sync", "--once", "--cli", "claude", "--dir", str(repo), "--api", api.url) == 1
     assert "RAGNAR_AGENT_TOKEN" in capsys.readouterr().err
-    # No hay forma de pasar el token por argv: argparse no conoce --token.
     assert _main(monkeypatch, "sync", "--once", "--cli", "claude", "--dir", str(repo), "--token", "x") == 2
 
 

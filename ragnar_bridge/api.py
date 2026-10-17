@@ -1,12 +1,7 @@
-"""Cliente minimo de la API REST de Ragnar para `sync` y `publicar` (RAG-217).
+"""Cliente minimo (urllib) de la API REST de Ragnar para `sync` y `publicar`.
 
-Solo libreria estandar (urllib): el bridge no suma dependencias por esto. Se
-autentica con un token PERSONAL de agente (`ragagt_...`, se crea en la app,
-pantalla "Mi token de agente"), que se lee SIEMPRE del entorno
-(`RAGNAR_AGENT_TOKEN`), nunca de argv: los argumentos de un proceso los ve
-cualquiera con `ps` y quedan en el historial del shell (mismo criterio que
-RAG-208 con el token del bridge).
-"""
+Se autentica con el token personal de agente, leido siempre del entorno
+(`RAGNAR_AGENT_TOKEN`) y nunca de argv, que queda visible en `ps` y el historial."""
 
 import json
 import os

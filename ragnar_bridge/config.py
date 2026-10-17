@@ -1,5 +1,5 @@
-"""Configuracion del bridge: un JSON chico, por defecto en
-~/.config/ragnar-bridge/config.json (o donde diga RAGNAR_BRIDGE_CONFIG)."""
+"""Configuracion del bridge: un JSON en ~/.config/ragnar-bridge/config.json (o en
+RAGNAR_BRIDGE_CONFIG), con sus valores por defecto y su validacion."""
 
 import json
 import os
@@ -27,88 +27,35 @@ def ruta_por_defecto() -> Path:
 
 @dataclass
 class Config:
-    # wss://panel.ragnargroup.app/api/v1/bridge/ws -- la muestra la app al
-    # crear el servidor, junto con el token.
     url: str
     token: str
-    # Que CLIs maneja este bridge. Por defecto (ninguno de los dos campos)
-    # detecta solo los que esten instalados en el servidor -- claude, agy, codex y/o hermes --
-    # y Ragnar deja elegir entre los que funcionan. `agents` fuerza un
-    # subconjunto (["claude"]); `agent` es la forma vieja (un solo CLI), se
-    # sigue leyendo para no romper un config de la 0.2.
     agents: Optional[List[str]] = None
     agent: Optional[str] = None
-    # Comando del CLI, como lista para poder apuntar a un wrapper
-    # (["node", ".../cli.js"], ["/opt/claude/bin/claude"]). Por defecto `claude`
-    # del PATH.
     claude_cmd: List[str] = field(default_factory=lambda: ["claude"])
     agy_cmd: List[str] = field(default_factory=lambda: ["agy"])
     codex_cmd: List[str] = field(default_factory=lambda: ["codex"])
     hermes_cmd: List[str] = field(default_factory=lambda: ["hermes"])
-    # Modelo de agy (`agy models` los lista). Vacio = el default del CLI.
     agy_model: Optional[str] = None
-    # Tope de un turno de agy (--print-timeout, formato Go: 30m, 2h).
     agy_timeout: str = "30m"
-    # Carpeta de estado de agy (conversaciones); la de siempre.
     agy_dir: str = "~/.gemini/antigravity-cli"
-    # Que hacer cuando agy necesita permiso para una herramienta (en headless
-    # se deniega solo, y lo unico que lo destraba es aprobar TODO):
-    #   preguntar (default) -- se lo pide a Ragnar; si aprobas en la app, esa
-    #                          conversacion corre con las herramientas aprobadas.
-    #   denegar             -- nunca se concede: el agente solo lee/conversa.
-    #   auto                -- siempre aprobado (--dangerously-skip-permissions).
-    #                          Solo en un servidor desechable.
     agy_permisos: str = "preguntar"
-    # Codex: modelo y esfuerzo de razonamiento -- SIEMPRE se fijan en cada turno
-    # (ignoran los de tu config.toml de Codex; "" = no fijar y usar los suyos),
-    # carpeta de Codex (con
-    # tu sesion ya iniciada; el bridge nunca escribe en su config.toml) y sandbox
-    # de las herramientas. En `exec` nadie aprueba comandos, asi que lo que el
-    # sandbox no permite falla: `read-only` (default) solo lee y conversa,
-    # `workspace-write` edita dentro de workdir (y de `add_dirs`),
-    # `danger-full-access` no restringe nada -- solo en un servidor desechable.
     codex_model: Optional[str] = "gpt-5.6-terra"
     codex_reasoning: Optional[str] = "medium"
     codex_home: str = "~/.codex"
     codex_sandbox: str = "read-only"
-    # Donde arranca cada turno. Ragnar no manda ruta (una ruta de SU servidor
-    # no significa nada aca): el directorio lo elegis vos.
     workdir: str = "~"
-    # Rutas locales de proyectos para instalación de agentes/skills. Se
-    # configuran en el servidor del usuario; Ragnar solo transmite project_key.
     project_paths: Dict[str, str] = field(default_factory=dict)
-    # Directorios extra a los que el CLI puede llegar fuera de `workdir` (flag
-    # --add-dir). Vacio = solo workdir.
     add_dirs: List[str] = field(default_factory=list)
-    # Deja que quien conecto este servidor edite desde la app de Ragnar su
-    # settings.json y CLAUDE.md de Claude Code y las rutas que sume ahi (ver
-    # archivos.py). `false` lo apaga: el bridge rechaza todo pedido de archivos.
     archivos_editables: bool = True
-    # Carpeta de config/credenciales del CLI. Por defecto la de siempre
-    # (~/.claude): el bridge usa TU sesion ya iniciada, no pide login.
     config_dir: str = "~/.claude"
-    # Token propio (ragagt_...) para que el CLI use el MCP de tickets de
-    # Ragnar. Opcional: sin el, el agente trabaja igual, solo sin esas tools.
     tickets_token: Optional[str] = None
-    # Cada cuantos segundos se vuelve a comprobar que CLIs estan instalados y
-    # con sesion iniciada (por si te logueaste en agy despues de arrancar el
-    # bridge). Si cambia algo, se le avisa a Ragnar sin reconectar.
     reprobar_cada: int = 120
-    # Turnos simultaneos como maximo (conversaciones distintas a la vez).
     max_turnos: int = 4
-    # Tope de un turno en segundos, para CUALQUIER agente: pasado esto el
-    # bridge corta el CLI (y sus hijos) y le avisa a Ragnar. Generoso a
-    # proposito: es para un CLI colgado, no para apurar un turno largo.
     timeout_turno: float = 2 * 60 * 60
-    # Cuantos bytes del stderr del CLI se conservan para reportar un fallo.
     tope_stderr: int = 16384
-    # Un evento de stream-json mas grande que esto (un Read de un archivo
-    # enorme) se descarta en vez de romper el socket; Ragnar lo ignora.
     tope_evento: int = 8 * 1024 * 1024
 
     def agentes_pedidos(self) -> List[str]:
-        """Los agentes que este bridge intenta manejar (aunque despues alguno no
-        este instalado): `agents`, o el `agent` viejo, o todos."""
         if self.agents is not None:
             return list(self.agents)
         if self.agent:
@@ -146,8 +93,6 @@ def cargar(ruta: Optional[Path] = None) -> Config:
         raise ConfigError("'url' tiene que empezar con wss:// (o ws:// solo para pruebas locales).")
 
     campos = {k: v for k, v in crudo.items() if k in Config.__dataclass_fields__}
-    # Un `null` (lo escribe `init` de la 0.5.0) es "sin dato", no "no fijar": vale
-    # el default. Para no fijarlo, "".
     for clave in ("codex_model", "codex_reasoning"):
         if campos.get(clave) is None:
             campos.pop(clave, None)
@@ -195,15 +140,10 @@ def cargar(ruta: Optional[Path] = None) -> Config:
 
 
 def guardar(cfg: Config, ruta: Optional[Path] = None) -> Path:
-    """Escribe la config con permisos 600: adentro va el token."""
     ruta = ruta or ruta_por_defecto()
     ruta.parent.mkdir(parents=True, exist_ok=True)
     datos = {k: getattr(cfg, k) for k in Config.__dataclass_fields__}
     tmp = ruta.with_suffix(".tmp")
-    # El archivo NACE con 600 (RAG-208): escribirlo y despues hacer chmod
-    # dejaba una ventana en que, con umask 022, cualquiera podia leer el
-    # token. Un .tmp que haya quedado de antes se borra: os.open no cambia
-    # los permisos de un archivo que ya existe.
     try:
         tmp.unlink()
     except FileNotFoundError:

@@ -14,9 +14,6 @@ TOKEN = "ragbrg_test"
 
 
 class FakeRagnar:
-    """Servidor de Ragnar minimo: valida el `auth`, contesta `welcome` y deja
-    al test mandar frames y leer lo que el bridge emite."""
-
     def __init__(self, token_valido=TOKEN, protocolo=PROTOCOLO):
         self.token_valido = token_valido
         self.protocolo = protocolo
@@ -59,7 +56,6 @@ class FakeRagnar:
                 eventos.append(msg["raw"])
             else:
                 return eventos, msg
-
 
 
 def run(task_id, prompt="hola", fallback=None, **extra):
