@@ -187,7 +187,7 @@ El bridge no adivina rutas ni crea mapeos automáticamente. Rechaza rutas fuera
 de las carpetas permitidas, enlaces simbólicos, rutas duplicadas y contenidos
 cuyo SHA-256 no coincida con el catálogo publicado.
 
-### Automático: siempre al día (0.9.0+)
+### Automático: siempre al día (0.10.0+)
 
 Cuando un administrador publica una revisión en el catálogo, Ragnar se la manda
 sola a los bridges conectados con ese CLI, para cada proyecto que el bridge
@@ -208,7 +208,7 @@ archivo y llega la revisión en el próximo aviso) o se aplica desde la app con
 **Instalar** confirmando la sobrescritura (queda respaldo). Al bridge solo le
 llegan las **claves** de `project_paths`; las rutas no salen de tu servidor.
 
-Esta función requiere `ragnar-bridge` **0.4.0 o posterior** (**0.5.0** para Codex, **0.9.0** para
+Esta función requiere `ragnar-bridge` **0.4.0 o posterior** (**0.5.0** para Codex, **0.10.0** para
 el modo automático). Para actualizar
 una instalación existente sin reemplazar su config:
 
@@ -501,7 +501,7 @@ Tu configuración (`~/.config/ragnar-bridge/config.json`, con el token del servi
 
 Si preferís, volver a correr el comando de instalación que muestra la app (Paso 4) también actualiza y reinicia.
 
-Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app; **0.9.0** recibe imágenes adjuntas en el chat.
+Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app; **0.9.0** recibe imágenes adjuntas en el chat; **0.10.0** suma el protocolo 2, la sincronización automática de agentes (`sync --once`, `publicar`) y los arreglos de la auditoría (permisos por conversación, procesos huérfanos, tope por turno).
 
 ## Desinstalar
 
