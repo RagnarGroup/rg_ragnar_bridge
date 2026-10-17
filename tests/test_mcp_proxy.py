@@ -165,3 +165,12 @@ def test_si_agy_no_acepta_el_mcp_el_turno_sigue_sin_tickets(tmp_path):
     agy._mcp_intentos = 3  # ya agoto los intentos de registro
     env = agy.entorno(_turno(tickets_token="ragagt_ana"))
     assert "RAGNAR_TICKETS_TOKEN" not in env
+
+
+def test_una_respuesta_mas_grande_que_el_tope_es_error(ragnar_http, monkeypatch):
+    import ragnar_bridge.mcp_proxy as modulo
+
+    monkeypatch.setattr(modulo, "TOPE_RESPUESTA", 10)
+    puente = Puente(f"{ragnar_http}/api/v1/mcp", "ragagt_turno", "agy")
+    r = _correr(puente, {"jsonrpc": "2.0", "id": 4, "method": "tools/list"})
+    assert r[0]["id"] == 4 and "supera" in r[0]["error"]["message"]

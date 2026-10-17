@@ -225,8 +225,33 @@ async def test_sandbox_por_defecto_es_read_only(arrancar, ragnar, tmp_path):
     await ragnar.hasta_done(tid)
     argv = _invocaciones(tmp_path)[0]["argv"]
     assert _overrides(argv)["sandbox_mode"] == "read-only"
-    assert "--dangerously-bypass-approvals-and-sandbox" in argv
+    # RAG-196: el bypass anulaba el sandbox. Sin el, nada pide aprobacion.
+    assert "--dangerously-bypass-approvals-and-sandbox" not in argv
+    assert _overrides(argv)["approval_policy"] == "never"
     assert "sandbox_workspace_write.writable_roots" not in _overrides(argv)
+
+
+@pytest.mark.parametrize(
+    "sandbox, bypass",
+    [("read-only", False), ("workspace-write", False), ("danger-full-access", True)],
+)
+async def test_bypass_solo_con_danger_full_access(arrancar, ragnar, tmp_path, sandbox, bypass):
+    """RAG-196: el flag que apaga sandbox Y aprobaciones va solo si el dueno
+    del servidor eligio `danger-full-access`; en el resto, aprobaciones en
+    `never` (headless: nada espera a un humano) y el sandbox elegido."""
+    await arrancar(codex_sandbox=sandbox)
+    tid = str(uuid.uuid4())
+    await ragnar.enviar(run(tid, prompt="uno"))
+    await ragnar.hasta_done(tid)
+    await ragnar.enviar(run(tid, prompt="dos"))
+    await ragnar.hasta_done(tid)
+    primero, segundo = [i["argv"] for i in _invocaciones(tmp_path)]
+    assert segundo[1] == "resume"
+    for argv in (primero, segundo):
+        assert ("--dangerously-bypass-approvals-and-sandbox" in argv) is bypass
+        ov = _overrides(argv)
+        assert ov["sandbox_mode"] == sandbox
+        assert ov["approval_policy"] == "never"
 
 
 async def test_workspace_write_suma_los_add_dirs_como_raices_escribibles(arrancar, ragnar, tmp_path):
@@ -378,6 +403,23 @@ def test_cuota_no_deja_huerfanos_de_app_server(tmp_path, monkeypatch):
     assert CodexAdaptador(cfg, tmp_path).cuota("x") is not None
 
     pid = int(pid_file.read_text().strip())
-    time.sleep(0.5)  # darle tiempo al kill del grupo a propagarse
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
+    assert _murio(pid), "el descendiente de app-server sobrevivio al corte del grupo"
+
+
+def _murio(pid: int, espera: float = 5.0) -> bool:
+    """¿Termino `pid`? Un zombie (muerto, esperando que init lo recoja)
+    cuenta como muerto."""
+    limite = time.monotonic() + espera
+    while time.monotonic() < limite:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        try:
+            with open(f"/proc/{pid}/stat", encoding="utf-8") as f:
+                if f.read().rsplit(")", 1)[-1].split()[0] == "Z":
+                    return True
+        except OSError:
+            return True
+        time.sleep(0.1)
+    return False

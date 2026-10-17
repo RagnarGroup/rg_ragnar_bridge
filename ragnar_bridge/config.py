@@ -96,6 +96,10 @@ class Config:
     reprobar_cada: int = 120
     # Turnos simultaneos como maximo (conversaciones distintas a la vez).
     max_turnos: int = 4
+    # Tope de un turno en segundos, para CUALQUIER agente: pasado esto el
+    # bridge corta el CLI (y sus hijos) y le avisa a Ragnar. Generoso a
+    # proposito: es para un CLI colgado, no para apurar un turno largo.
+    timeout_turno: float = 2 * 60 * 60
     # Cuantos bytes del stderr del CLI se conservan para reportar un fallo.
     tope_stderr: int = 16384
     # Un evento de stream-json mas grande que esto (un Read de un archivo
@@ -130,7 +134,7 @@ def cargar(ruta: Optional[Path] = None) -> Config:
         crudo = json.loads(ruta.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ConfigError(
-            f"No existe {ruta}. Creala con `ragnar-bridge init --url ... --token ...`."
+            f"No existe {ruta}. Creala con `ragnar-bridge init --url ...` (te pide el token)."
         )
     except json.JSONDecodeError as e:
         raise ConfigError(f"{ruta} no es JSON valido: {e}")
@@ -177,6 +181,12 @@ def cargar(ruta: Optional[Path] = None) -> Config:
         raise ConfigError(
             f"'codex_sandbox' tiene que ser uno de {', '.join(CODEX_SANDBOXES)} (es {cfg.codex_sandbox!r})."
         )
+    if (
+        isinstance(cfg.timeout_turno, bool)
+        or not isinstance(cfg.timeout_turno, (int, float))
+        or cfg.timeout_turno <= 0
+    ):
+        raise ConfigError(f"'timeout_turno' tiene que ser un numero de segundos mayor a 0 (es {cfg.timeout_turno!r}).")
     if cfg.codex_reasoning and cfg.codex_reasoning not in CODEX_RAZONAMIENTOS:
         raise ConfigError(
             f"'codex_reasoning' tiene que ser uno de {', '.join(CODEX_RAZONAMIENTOS)} o vacio (es {cfg.codex_reasoning!r})."
@@ -190,10 +200,16 @@ def guardar(cfg: Config, ruta: Optional[Path] = None) -> Path:
     ruta.parent.mkdir(parents=True, exist_ok=True)
     datos = {k: getattr(cfg, k) for k in Config.__dataclass_fields__}
     tmp = ruta.with_suffix(".tmp")
-    tmp.write_text(json.dumps(datos, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    # El archivo NACE con 600 (RAG-208): escribirlo y despues hacer chmod
+    # dejaba una ventana en que, con umask 022, cualquiera podia leer el
+    # token. Un .tmp que haya quedado de antes se borra: os.open no cambia
+    # los permisos de un archivo que ya existe.
     try:
-        os.chmod(tmp, 0o600)
-    except OSError:
+        tmp.unlink()
+    except FileNotFoundError:
         pass
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as archivo:
+        archivo.write(json.dumps(datos, indent=2, ensure_ascii=False) + "\n")
     os.replace(tmp, ruta)
     return ruta

@@ -103,6 +103,17 @@ class HermesAdaptador(Adaptador):
     # ---- comando
 
     def preparar(self, turno: Turno, username: str) -> Comando:
+        if turno.conceder:
+            # Hermes no tiene capa de permisos que conceder: en --oneshot ya
+            # corre sus herramientas sin preguntar. Si Ragnar manda un
+            # `conceder` es que le ofrecio al humano una tarjeta "Autorizar"
+            # que aca no cambia nada; se deja constancia en vez de tragarlo
+            # en silencio (RAG-187).
+            log.warning(
+                "Ragnar pidio conceder %r a Hermes, que no tiene permisos que conceder "
+                "(corre sus herramientas sin pedir aprobacion): no cambia nada en este turno.",
+                turno.conceder,
+            )
         sesion = self._leer().get(turno.session_id, {})
         hermes_session = sesion.get("hermes_session_id")
         reanudar = bool(hermes_session)

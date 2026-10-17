@@ -204,6 +204,22 @@ async def test_el_permiso_de_una_conversacion_no_pasa_a_otra(arrancar, ragnar, t
     assert "--dangerously-skip-permissions" not in _argvs(tmp_path)[1]
 
 
+@pytest.mark.parametrize("conceder", ["Bash(*)", "Bash", "agy:permisos ", "AGY:PERMISOS", "WebFetch"])
+async def test_solo_la_etiqueta_exacta_activa_el_modo_sin_permisos(arrancar, ragnar, tmp_path, conceder):
+    """RAG-200: antes CUALQUIER `conceder` no vacio dejaba la conversacion en
+    --dangerously-skip-permissions para siempre."""
+    await arrancar()
+    tid = str(uuid.uuid4())
+    await ragnar.enviar(run(tid, prompt="TOOL", conceder=conceder))
+    await ragnar.hasta_done(tid)
+    await ragnar.enviar(run(tid, prompt="otra vez TOOL"))
+    await ragnar.hasta_done(tid)
+    for argv in _argvs(tmp_path):
+        assert "--dangerously-skip-permissions" not in argv
+    estado = json.loads((tmp_path / "agy-estado.json").read_text())
+    assert not estado["sesiones"][tid].get("permisos")
+
+
 async def test_modo_denegar_nunca_concede(arrancar, ragnar, tmp_path):
     await arrancar(agy_permisos="denegar")
     tid = str(uuid.uuid4())

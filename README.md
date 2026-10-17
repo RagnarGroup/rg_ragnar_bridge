@@ -37,7 +37,7 @@ conversación (una conversación sigue con el CLI con el que empezó).
 |---|---|---|---|---|
 | Comando | `claude` | `agy` | `codex` | `hermes` |
 | Sesión de la conversación | `--session-id` / `--resume` (la maneja el CLI) | el bridge recuerda qué conversación de agy es cuál (`agy-estado.json`) | el bridge recuerda qué hilo de Codex es cuál (`codex-estado.json`) y lo retoma con `codex exec resume` | el bridge recuerda qué sesión de Hermes es cuál (`hermes-estado.json`) y la retoma con `hermes chat --resume` |
-| Permisos de herramientas | Ragnar te muestra la tarjeta **Autorizar**; al aprobar, el bridge suma **esa** herramienta a tu `~/.claude/settings.json` | agy **deniega** solo lo que pide permiso (en modo headless no puede preguntar). Ragnar te muestra la misma tarjeta; al aprobar, **esa conversación** corre con las herramientas aprobadas | En `exec` Codex **no puede preguntar**: lo que el sandbox no permite falla. Sin tarjeta **Autorizar**; el alcance lo fija `codex_sandbox` (default `read-only`: lee y conversa) | Probado en vivo corriendo una herramienta de shell en `--oneshot` sin pedir aprobación (a diferencia de agy). Sin tarjeta **Autorizar** por ahora |
+| Permisos de herramientas | Ragnar te muestra la tarjeta **Autorizar**; al aprobar, el bridge suma **esa** herramienta a los permisos de **esa conversación** (`--settings` propio, nunca tu `~/.claude/settings.json`) | agy **deniega** solo lo que pide permiso (en modo headless no puede preguntar). Ragnar te muestra la misma tarjeta; al aprobar, **esa conversación** corre con las herramientas aprobadas | En `exec` Codex **no puede preguntar**: lo que el sandbox no permite falla. Sin tarjeta **Autorizar**; el alcance lo fija `codex_sandbox` (default `read-only`: lee y conversa) | Probado en vivo corriendo una herramienta de shell en `--oneshot` sin pedir aprobación (a diferencia de agy). Sin tarjeta **Autorizar** por ahora |
 | Herramientas de tickets de Ragnar (MCP) | sí (token efímero de quien escribe) | sí, por un puente propio (`ragnar-tickets`, se registra solo) | sí, por el mismo puente, declarado en cada turno (no se escribe nada en tu `config.toml`) | todavía no (RAG-187) |
 | Cuota real de la suscripción | todavía no | sí, desde agy 1.1.11 (`agy -p "/usage"`) | sí (`codex app-server`, límites de 5 h y semanal) | todavía no |
 | Probado con | Claude Code 2.1.170 | agy 1.1.27, 1.2.2 y 1.2.7 | codex-cli 0.157.0 | hermes-agent 0.21.5 |
@@ -127,18 +127,26 @@ Tené en cuenta en un bridge compartido:
   headless, la primera vez te pide **Autorizar** en la app.
 - Lo puede revocar quien lo creó o cualquier miembro del grupo (así no queda
   huérfano si su creador se va).
-- Si un miembro tiene su propio bridge **y** hay uno compartido, sus
-  conversaciones nuevas usan el propio; una conversación que ya vive en uno
-  sigue en ese.
+- **Un compañero usa el bridge compartido solo si lo elige** al crear la
+  conversación (el dueño del VPS puede ver lo que escribe, el código y su token
+  de turno). Sin elegirlo, Ragnar usa solo sus bridges propios y, si no tiene
+  ninguno conectado, el turno falla con un mensaje que nombra los compartidos
+  que puede elegir. Quien creó el bridge compartido lo usa como propio. Una
+  conversación que ya vive en un bridge sigue en ese.
 
 ## Paso 4 — Instalá el bridge
 
-Pegá en tu VPS el comando que te muestra la app (con tu URL y tu token):
+Pegá en tu VPS el comando que te muestra la app (con tu URL); el script te
+pide el token (`ragbrg_...`) sin mostrarlo:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/gaguilarf/ragnar_bridge/main/install.sh \
-  | bash -s -- --url wss://panel.ragnargroup.app/api/v1/bridge/ws --token ragbrg_...
+curl -fsSL https://raw.githubusercontent.com/RagnarGroup/rg_ragnar_bridge/main/install.sh \
+  | bash -s -- --url wss://panel.ragnargroup.app/api/v1/bridge/ws
 ```
+
+Sin terminal interactiva, pasalo por la variable `RAGNAR_BRIDGE_TOKEN`. `--token
+ragbrg_...` sigue funcionando pero está deprecado: en los argumentos queda
+visible en `ps` y en el historial del shell.
 
 No hace falta decirle el agente: detecta `claude`, `agy`, `codex` y/o `hermes`. Opciones:
 `--agent claude|agy|codex|hermes` (maneja SOLO ese), `--model M` (modelo de agy o de codex con `--agent codex`),
@@ -179,11 +187,33 @@ El bridge no adivina rutas ni crea mapeos automáticamente. Rechaza rutas fuera
 de las carpetas permitidas, enlaces simbólicos, rutas duplicadas y contenidos
 cuyo SHA-256 no coincida con el catálogo publicado.
 
-Esta función requiere `ragnar-bridge` **0.4.0 o posterior** (**0.5.0** para Codex). Para actualizar
+### Automático: siempre al día (0.9.0+)
+
+Cuando un administrador publica una revisión en el catálogo, Ragnar se la manda
+sola a los bridges conectados con ese CLI, para cada proyecto que el bridge
+tiene en `project_paths` (y cuyo dueño puede ver). El bridge la aplica **sin
+pisar nada editado a mano**:
+
+| Estado del archivo en el proyecto | Qué hace |
+|---|---|
+| no existe | lo escribe |
+| ya tiene ese contenido | nada |
+| no se tocó desde la última revisión aplicada | lo actualiza |
+| editado a mano (o existía antes sin pasar por Ragnar) | **no lo toca**: lo reporta como conflicto y queda en la auditoría de Ragnar |
+
+Para saber qué es «no tocado», el bridge guarda el SHA-256 de lo último que
+escribió en `~/.config/ragnar-bridge/bootstrap-aplicados.json` (fuera del
+proyecto). Un conflicto se resuelve a mano: o se descarta tu cambio (borrás el
+archivo y llega la revisión en el próximo aviso) o se aplica desde la app con
+**Instalar** confirmando la sobrescritura (queda respaldo). Al bridge solo le
+llegan las **claves** de `project_paths`; las rutas no salen de tu servidor.
+
+Esta función requiere `ragnar-bridge` **0.4.0 o posterior** (**0.5.0** para Codex, **0.9.0** para
+el modo automático). Para actualizar
 una instalación existente sin reemplazar su config:
 
 ```sh
-~/.local/share/ragnar-bridge/venv/bin/pip install --upgrade --force-reinstall 'git+https://github.com/gaguilarf/ragnar_bridge'
+~/.local/share/ragnar-bridge/venv/bin/pip install --upgrade --force-reinstall 'git+https://github.com/RagnarGroup/rg_ragnar_bridge'
 systemctl --user restart ragnar-bridge.service
 ```
 
@@ -230,6 +260,87 @@ mismo token o con otro) **reemplaza la config y reinicia el servicio**: es la
 forma de actualizarlo y de cambiar de token. El servidor viejo de la app queda
 "desconectado": revocalo desde **Mis servidores**.
 
+## Config de agentes en tu PC: `sync` y `publicar`
+
+El catálogo de Ragnar es la única fuente de la config de los agentes. En un PC
+(sin bridge corriendo) se usa la misma lógica, con dos comandos que hablan con
+la API REST de Ragnar. Ninguno recibe el token por argumento: se lee de la
+variable `RAGNAR_AGENT_TOKEN` (un token **personal** de agente, `ragagt_...`,
+que se crea en la app en «Mi token de agente»). La URL por defecto es
+`https://panel.ragnargroup.app/api/v1`; se cambia con `--api` o con
+`RAGNAR_API_URL`.
+
+### `ragnar-bridge sync --once`
+
+Baja los agentes/skills vigentes de un proyecto y los escribe con la misma
+política que el modo automático (nunca pisa lo editado a mano):
+
+```sh
+ragnar-bridge sync --once --cli claude --project RAG --dir ~/proyectos/rg_ragnar_back
+```
+
+- `--project` es opcional: sin él baja solo lo global.
+- Solo escribe bajo las carpetas permitidas de ese CLI (`.claude/agents/`,
+  `.claude/skills/`, ...). Si Ragnar mandara algo fuera de ahí, rechaza el
+  manifiesto entero sin escribir nada.
+- Salida: una línea por archivo nuevo, actualizado o en conflicto, y un
+  resumen. Sale con 0 aunque haya conflictos (se avisan, no se pisan) y con 1
+  si no pudo hablar con Ragnar.
+- El registro de SHA aplicados va a la carpeta del config del bridge
+  (`~/.config/ragnar-bridge/`, o `--estado <carpeta>`).
+- No hay modo daemon: en un servidor, el bridge ya recibe los cambios solo.
+
+### Hook `SessionStart` de Claude Code
+
+Para que cada sesión arranque con la config del día, agregá un hook
+`SessionStart` en el `settings.json` del proyecto (`.claude/settings.json`) o en
+el tuyo (`~/.claude/settings.json`). Ejemplo:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ragnar-bridge sync --once --cli claude --project RAG --dir \"$CLAUDE_PROJECT_DIR\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- `RAGNAR_AGENT_TOKEN` tiene que estar en el entorno con el que arranca Claude
+  Code (en Windows: `setx RAGNAR_AGENT_TOKEN "ragagt_..."` y abrir una terminal
+  nueva). No lo pongas en el `settings.json`.
+- Lo que el comando imprime le llega a Claude como contexto de la sesión: si hay
+  un conflicto, el agente lo ve.
+- Si Ragnar no responde, la sesión arranca igual (con la config que ya tenías).
+
+### `ragnar-bridge publicar`
+
+Sube al catálogo (solo un **administrador**: el token del entorno tiene que ser
+de uno) cada archivo de una carpeta que caiga bajo las carpetas permitidas del
+CLI. La clave de cada artefacto se deriva de CLI + proyecto + ruta
+(`claude/RAG/.claude/agents/rafael.md`; `_global` sin proyecto), así que
+volver a publicar la misma ruta crea una **revisión nueva** del mismo
+artefacto. Es idempotente: un archivo cuyo SHA-256 es igual al vigente no se
+vuelve a subir.
+
+```sh
+ragnar-bridge publicar --cli claude --project RAG ~/proyectos/rg_ragnar_back
+ragnar-bridge publicar --cli claude ~/agentes-globales   # sin --project: global
+```
+
+Se omiten (y se avisan) los archivos vacíos, los que no son texto UTF-8, los de
+más de 256 KiB y los enlaces simbólicos. Cada publicación dispara el aviso
+automático a los bridges conectados.
+
 ## Paso 5 — Verificá
 
 ```sh
@@ -253,9 +364,14 @@ vas a ver la tarjeta **Autorizar** (paso siguiente).
 ### Cómo funcionan los permisos
 
 - **Claude Code**: la tarjeta dice qué herramienta pide (ej. `Bash(docker *)`).
-  Al aprobar, el bridge la agrega a `permissions.allow` de tu
-  `~/.claude/settings.json` y retoma el turno. Nunca acepta patrones tipo
-  `Bash(*)` ni `rm -rf /`.
+  Al aprobar, el bridge la agrega a un settings **propio de esa conversación**
+  (`claude-permisos-<sesión>.json`, junto al config del bridge) que se pasa con
+  `--settings` en cada turno de ella, y retoma el turno. Tu
+  `~/.claude/settings.json` no se toca (hasta la 0.7.0 sí: la regla quedaba para
+  siempre y también valía en tus sesiones interactivas, RAG-200). Además rechaza
+  localmente toda regla sin un comando concreto: `Bash` a secas, `Bash(*)`,
+  `Bash(:*)`, `Bash(**)`, intérpretes o envoltorios con comodín
+  (`Bash(sh:*)`, `Bash(python *)`, `Bash(sudo:*)`) y `rm -rf /`.
 - **Antigravity**: agy en modo headless **no puede preguntar** y `permissions.allow`
   de su `settings.json` se ignora ahí (issue #548 de antigravity-cli). La única
   forma de destrabarlo es aprobar *todas* las herramientas, así que el bridge
@@ -273,7 +389,15 @@ vas a ver la tarjeta **Autorizar** (paso siguiente).
   pregunta: lo que el *sandbox* no permite falla, y por eso no hay tarjeta
   **Autorizar**. El alcance lo fija `codex_sandbox` en el config del bridge:
   `read-only` (default: lee y conversa), `workspace-write` (edita dentro de
-  `workdir` y de `add_dirs`) o `danger-full-access`. El bridge nunca escribe en tu
+  `workdir` y de `add_dirs`) o `danger-full-access`. Cada turno va con
+  `approval_policy="never"`: lo que el sandbox no deja hacer falla y el modelo ve
+  el error, nada se queda esperando una aprobación. Solo con `danger-full-access`
+  el bridge pasa `--dangerously-bypass-approvals-and-sandbox` (sin sandbox: el
+  modelo corre cualquier comando como el usuario del bridge). Hasta la 0.7.0 ese
+  flag iba **siempre** y `codex_sandbox` no tenía efecto (RAG-196): si venías
+  usando Codex para editar, ahora necesitás `workspace-write`. En Linux el
+  sandbox de Codex usa Landlock/seccomp; en un contenedor sin esas capacidades
+  los comandos del modelo fallan con `read-only`/`workspace-write`. El bridge nunca escribe en tu
   `~/.codex/config.toml`: sandbox, modelo y las tools de tickets van como
   overrides de cada turno, y el token de tickets viaja en el entorno del proceso,
   nunca en el comando.
@@ -300,9 +424,10 @@ vas a ver la tarjeta **Autorizar** (paso siguiente).
 | `agy_dir` | `~/.gemini/antigravity-cli` | (agy) dónde agy guarda sus conversaciones |
 | `codex_model` | `gpt-5.6-terra` | (codex) modelo. Se fija en **cada** turno, aunque tu `config.toml` de Codex diga otro; `""` = no fijarlo y usar el de Codex |
 | `codex_reasoning` | `medium` | (codex) esfuerzo de razonamiento (`low`, `medium`, `high`, `xhigh`, `max`, `ultra`); `""` = no fijarlo |
-| `codex_sandbox` | `read-only` | (codex) `read-only` (lee y conversa), `workspace-write` (edita dentro de `workdir` y de `add_dirs`) o `danger-full-access` (sin restricciones: **solo en un servidor desechable**) |
+| `codex_sandbox` | `read-only` | (codex) `read-only` (lee y conversa), `workspace-write` (edita dentro de `workdir` y de `add_dirs`) o `danger-full-access` (sin sandbox ni aprobaciones, `--dangerously-bypass-approvals-and-sandbox`: **solo en un servidor desechable**). Siempre con `approval_policy="never"` |
 | `codex_home` | `~/.codex` | (codex) carpeta de Codex con tu sesión iniciada; solo se exporta `CODEX_HOME` si la cambiás |
 | `max_turnos` | `4` | conversaciones simultáneas |
+| `timeout_turno` | `7200` | tope de un turno en segundos, para cualquier agente: pasado esto el bridge corta el CLI (y sus hijos) y Ragnar ve el turno como fallido |
 
 Después de editarlo: `systemctl --user restart ragnar-bridge`.
 
@@ -365,7 +490,7 @@ Cuando Ragnar o el chat te pida «actualizar el bridge» (o `doctor` diga que el
 ~/.local/share/ragnar-bridge/venv/bin/ragnar-bridge --version
 
 # 2. Actualizar (--force-reinstall para que traiga el código nuevo aunque la versión no haya cambiado)
-~/.local/share/ragnar-bridge/venv/bin/pip install --upgrade --force-reinstall --no-deps git+https://github.com/gaguilarf/ragnar_bridge
+~/.local/share/ragnar-bridge/venv/bin/pip install --upgrade --force-reinstall --no-deps git+https://github.com/RagnarGroup/rg_ragnar_bridge
 
 # 3. Reiniciar el servicio y comprobar
 systemctl --user restart ragnar-bridge
@@ -393,8 +518,8 @@ El instalador es solo Linux + systemd. En otros sistemas se instala a mano (el
 bridge en sí corre en Windows, probado en Windows 11):
 
 ```sh
-python -m venv venv && venv/bin/pip install git+https://github.com/gaguilarf/ragnar_bridge   # Windows: venv\Scripts\pip
-ragnar-bridge init --agent claude --url wss://... --token ragbrg_...                          # o --agent agy
+python -m venv venv && venv/bin/pip install git+https://github.com/RagnarGroup/rg_ragnar_bridge   # Windows: venv\Scripts\pip
+ragnar-bridge init --agent claude --url wss://...    # o --agent agy; pide el token (o RAGNAR_BRIDGE_TOKEN, o stdin)
 ragnar-bridge doctor
 ragnar-bridge run            # dejalo corriendo (launchd en macOS, Tareas programadas o NSSM en Windows)
 ```
@@ -414,7 +539,8 @@ el de agy emite los eventos reales capturados de agy 1.1.27, el de Codex el JSON
 
 El protocolo está documentado en `services/bridge_hub.py` de `ragnar_group_back`
 (fuente de verdad); `PROTOCOLO` en `ragnar_bridge/__init__.py` tiene que
-coincidir. Para sumar otro agente: una clase en `ragnar_bridge/agents/` que
+estar entre los `PROTOCOLOS_ACEPTADOS` del hub (hoy 1 y 2; este bridge habla 2,
+así que necesita un backend que ya acepte la 2). Para sumar otro agente: una clase en `ragnar_bridge/agents/` que
 arme el comando y traduzca sus eventos al formato de Claude Code (ver
 `agents/agy.py`), y registrarla en `agents/__init__.py`.
 
@@ -424,3 +550,10 @@ arme el comando y traduzca sus eventos al formato de Claude Code (ver
   responde 501).
 - Tools de tickets de Ragnar (MCP) para Antigravity.
 - Tarjeta **Autorizar** para Codex (hoy el alcance se fija con `codex_sandbox`).
+- Config global por máquina (`~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md`): necesita un prefijo de
+  alcance usuario con allowlist explícita en el catálogo; hoy `sync` y el modo automático solo
+  escriben dentro de un proyecto.
+- Los conflictos de `sync` en el PC se avisan en la salida pero no se reportan a Ragnar (los del
+  bridge sí quedan en la auditoría).
+- Bootstrap de agentes/skills para Hermes: sus skills son globales (`~/.hermes/skills/`) y no hay
+  una carpeta estándar por proyecto; el bridge responde que no lo soporta en vez de inventar una.

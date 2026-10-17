@@ -21,9 +21,13 @@ codex-cli 0.157.0; ver tests/test_codex.py para las formas de los eventos):
   ENTORNO del proceso y `mcp_servers.<n>.env_vars` lo reenvia al puente
   `mcp_proxy` (los argumentos de un proceso los ve cualquiera con `ps`).
   Ademas se excluye del entorno de las herramientas de shell del modelo.
-* En `exec` no hay nadie que apruebe comandos: lo que el sandbox no permite
-  falla, no se pregunta. Por eso el default es `read-only` (el agente lee y
-  conversa) y `codex_sandbox` deja subirlo. No hay tarjeta "Autorizar".
+* En `exec` no hay nadie que apruebe comandos: cada turno va con
+  `approval_policy="never"`, asi que lo que el sandbox no permite falla (el
+  modelo ve el error) y nada se queda esperando una aprobacion. Por eso el
+  default es `read-only` (el agente lee y conversa) y `codex_sandbox` deja
+  subirlo. `--dangerously-bypass-approvals-and-sandbox` va SOLO con
+  `codex_sandbox="danger-full-access"` (RAG-196: antes iba siempre y anulaba
+  el sandbox). No hay tarjeta "Autorizar".
 """
 
 import json
@@ -237,6 +241,12 @@ class CodexAdaptador(Adaptador):
         cfg = self.cfg
         pares = [
             ("sandbox_mode", _toml(cfg.codex_sandbox)),
+            # En `exec` nadie puede contestar una aprobacion: con "never" lo
+            # que el sandbox no permite FALLA y el modelo recibe el error, en
+            # vez de quedarse esperando a un humano que no existe. Se fija
+            # explicito para no depender del default de cada version de Codex
+            # ni de lo que diga tu config.toml.
+            ("approval_policy", _toml("never")),
             # Que el modelo no vea en sus comandos de shell las variables del puente.
             ("shell_environment_policy.exclude", _toml(["RAGNAR_*"])),
         ]
@@ -283,12 +293,12 @@ class CodexAdaptador(Adaptador):
         argv = [*self.cfg.codex_cmd, "exec"]
         if reanudar:
             argv.append("resume")
-        argv += [
-            "--dangerously-bypass-approvals-and-sandbox",
-            "--json",
-            "--skip-git-repo-check",
-            *self._overrides(turno),
-        ]
+        if self.cfg.codex_sandbox == "danger-full-access":
+            # Solo si el dueno del servidor lo pidio a proposito: sin sandbox
+            # y sin aprobaciones, el modelo corre CUALQUIER comando como el
+            # usuario del bridge (RAG-196).
+            argv.append("--dangerously-bypass-approvals-and-sandbox")
+        argv += ["--json", "--skip-git-repo-check", *self._overrides(turno)]
         # `--` para que un prompt que empieza con "-" no se lea como un flag.
         argv += ["--", *([hilo] if reanudar else []), texto]
 

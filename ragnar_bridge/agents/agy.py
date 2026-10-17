@@ -15,6 +15,16 @@ Diferencias con Claude Code que el adaptador absorbe (verificado contra agy
   cabe ahi. Se registra una sola vez `ragnar-tickets` como servidor stdio
   (`mcp_proxy`) y el token de cada turno viaja en el ENTORNO del agy de ese
   turno, que el servidor hereda. Ver `mcp_proxy.py`.
+  Limite conocido (RAG-208): a diferencia de Codex
+  (`shell_environment_policy.exclude`), agy no tiene forma de quitar variables
+  del entorno que heredan las herramientas de shell del modelo, y el servidor
+  stdio solo recibe el token heredandolo de ese mismo entorno (`agy mcp add
+  --env` es estatico y global, no sirve para un token por turno). Asi que el
+  modelo PUEDE leer `RAGNAR_TICKETS_TOKEN` desde un shell. Se acepta porque es
+  el token efimero y estricto de ESE turno, el mismo que el modelo ya usa via
+  MCP. Pasarlo por un archivo que el proxy borre al leerlo dependeria de que
+  agy lance el servidor una sola vez y antes de cualquier herramienta, cosa no
+  verificada: si fallara, el turno se quedaria sin tickets.
 * En modo headless una herramienta que pide permiso se DENIEGA sola (y
   `permissions.allow` de su settings.json se ignora en headless, issue #548 de
   antigravity-cli). La salida es `--dangerously-skip-permissions`, que aprueba
@@ -196,7 +206,12 @@ class AgyAdaptador(Adaptador):
         reanudar = bool(conversacion) and conversacion_existe(cfg, conversacion)
 
         permisos = bool(sesion.get("permisos"))
-        if turno.conceder and cfg.agy_permisos == "preguntar" and not permisos:
+        if turno.conceder and turno.conceder != PERMISO_AGY:
+            # Solo la etiqueta exacta que pidio ESTE adaptador destraba agy
+            # (RAG-200): cualquier otro texto (una regla de Claude, algo
+            # inyectado en el [[PERMISO]]) no activa el modo sin permisos.
+            log.warning("Ragnar pidio conceder %r a agy; solo vale %r: se ignora.", turno.conceder, PERMISO_AGY)
+        elif turno.conceder and cfg.agy_permisos == "preguntar" and not permisos:
             # El humano aprobo en la app: desde ahora esta conversacion corre
             # con las herramientas aprobadas.
             permisos = True
