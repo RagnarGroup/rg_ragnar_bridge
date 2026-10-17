@@ -1,3 +1,6 @@
+"""Archivos editables desde Ragnar: lista permitida, rutas prohibidas o invalidas,
+escritura con respaldo y control de cambios, y el frame `files` del bridge."""
+
 import json
 
 import pytest
@@ -9,7 +12,6 @@ from ragnar_bridge.config import Config
 
 @pytest.fixture
 def entorno(tmp_path, monkeypatch):
-    """Un HOME de mentira: nada de esto toca el ~/.claude real."""
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
     estado = home / ".config" / "ragnar-bridge"
@@ -41,7 +43,6 @@ def test_agregar_y_quitar_una_ruta(entorno):
 
     rutas = [f["path"] for f in archivos.agregar("~/notas.md")["files"]]
     assert rutas[-1] == str(notas)
-    # Agregarla dos veces no la duplica.
     assert len(archivos.agregar(str(notas))["files"]) == 3
     assert archivos.leer(str(notas))["content"] == "hola"
 
@@ -127,13 +128,12 @@ def test_si_el_archivo_cambio_en_el_servidor_no_se_pisa(entorno):
     settings = _settings(home)
     settings.write_text("{}")
     leido = archivos.leer(str(settings))
-    settings.write_text('{"permissions": {"allow": ["Read"]}}')  # el agente sumo un permiso
+    settings.write_text('{"permissions": {"allow": ["Read"]}}')
 
     with pytest.raises(ErrorArchivo) as error:
         archivos.escribir(str(settings), '{"x": 1}', leido["sha256"])
     assert error.value.codigo == "conflict"
     assert "Read" in settings.read_text()
-    # Tampoco se crea encima de uno que aparecio mientras tanto.
     with pytest.raises(ErrorArchivo):
         archivos.escribir(str(settings), "{}", None)
 
@@ -150,13 +150,12 @@ def test_un_json_roto_no_se_guarda(entorno):
 def test_settings_no_acepta_un_permiso_catastrofico_nuevo(entorno):
     archivos, home = entorno
     settings = _settings(home)
-    settings.write_text('{"permissions": {"allow": ["Bash(*)"]}}')  # lo puso el dueno a mano
+    settings.write_text('{"permissions": {"allow": ["Bash(*)"]}}')
     sha = archivos.leer(str(settings))["sha256"]
 
     with pytest.raises(ErrorArchivo) as error:
         archivos.escribir(str(settings), '{"permissions": {"allow": ["Bash(*)", "*"]}}', sha)
     assert error.value.codigo == "forbidden"
-    # El que ya estaba no impide guardar otros cambios.
     archivos.escribir(str(settings), '{"permissions": {"allow": ["Bash(*)", "Bash(node *)"]}}', sha)
 
 

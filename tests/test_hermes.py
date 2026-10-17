@@ -1,7 +1,5 @@
-"""Adaptador de Hermes Agent: traduccion de eventos, sesiones por conversacion
-y comando. Corre contra tests/fake_hermes.py, que emite el JSONL real de
-`hermes chat --format stream-json` (hermes-agent 0.21.5, capturado en vivo en
-servidor-personal, RAG-187)."""
+"""Adaptador de Hermes: traduccion de eventos, sesiones por conversacion y comando,
+contra tests/fake_hermes.py."""
 
 import asyncio
 import json
@@ -58,9 +56,6 @@ async def test_el_bridge_se_anuncia_como_hermes(arrancar, ragnar):
     assert ragnar.auth_frame["agent"] == "hermes"
     agentes = ragnar.auth_frame["agents"]
     assert [a["name"] for a in agentes] == ["hermes"]
-    # Hermes no tiene un comando de solo-estado equivalente a `codex login
-    # status`/`agy models` (RAG-187): "sesion sin comprobar" es honesto,
-    # nunca bloquea que se intente un turno.
     assert agentes[0]["cli_version"].startswith("Hermes Agent") and agentes[0]["login"] is None
 
 
@@ -74,7 +69,6 @@ async def test_traduce_texto_y_uso_al_formato_de_claude(arrancar, ragnar):
     assert _texto(eventos) == "Hola mundo"
     resultado = eventos[-1]
     assert resultado["type"] == "result" and resultado["is_error"] is False
-    # cache_read se resta de input, igual que con Codex: Hermes lo incluye adentro.
     assert resultado["usage"] == {
         "input_tokens": 4556,
         "output_tokens": 136,
@@ -123,7 +117,6 @@ async def test_segundo_turno_retoma_la_sesion(arrancar, ragnar, tmp_path):
     sesion = estado["sesiones"][tid]["hermes_session_id"]
     assert "--resume" not in primero
     assert "--resume" in segundo and segundo[segundo.index("--resume") + 1] == sesion
-    # Retomando, va solo el mensaje nuevo, sin las instrucciones de Ragnar.
     query = next(a for a in segundo if a.startswith("--query="))[len("--query=") :]
     assert query == "dos"
 
@@ -133,8 +126,8 @@ async def test_resultado_con_error_se_reporta(arrancar, ragnar):
     tid = str(uuid.uuid4())
     await ragnar.enviar(run(tid, prompt="FAILED"))
     eventos, fin = await ragnar.hasta_done(tid)
-    assert fin["exit_code"] == 0  # el proceso de hermes sale limpio...
-    assert eventos[-1]["type"] == "result" and eventos[-1]["is_error"] is True  # ...pero el turno fallo
+    assert fin["exit_code"] == 0
+    assert eventos[-1]["type"] == "result" and eventos[-1]["is_error"] is True
     assert eventos[-1]["result"] == "Hermes se quedo sin cuota."
 
 
@@ -163,9 +156,29 @@ async def test_probar_conexion_anuncia_hermes(ragnar):
 
 
 def test_cuota_de_hermes_es_none(tmp_path):
-    """Hermes no tiene hoy un comando de solo lectura para leer limites de
-    cuota (a diferencia de codex app-server/agy -p=/usage)."""
     from ragnar_bridge.agents.hermes import HermesAdaptador
 
     cfg = Config(url="ws://x", token="t", agents=["hermes"], hermes_cmd=[sys.executable, FAKE_HERMES])
     assert HermesAdaptador(cfg, tmp_path).cuota("x") is None
+
+
+async def test_conceder_deja_un_warning_y_no_se_ignora_en_silencio(arrancar, ragnar, tmp_path, caplog):
+    await arrancar()
+    tid = str(uuid.uuid4())
+    with caplog.at_level("WARNING", logger="ragnar_bridge"):
+        await ragnar.enviar(run(tid, prompt="hola", conceder="Bash(docker ps:*)"))
+        _, fin = await ragnar.hasta_done(tid)
+    assert fin["type"] == "done"
+    assert any("Hermes" in r.getMessage() and "docker ps" in r.getMessage() for r in caplog.records)
+    argv = _invocaciones(tmp_path)[0]["argv"]
+    assert "--yolo" not in argv and not any("docker" in a for a in argv)
+
+
+def test_bootstrap_de_hermes_explica_que_no_hay_carpeta_estandar(tmp_path):
+    from ragnar_bridge.bridge import PREFIJOS_BOOTSTRAP, Bridge
+
+    assert "hermes" not in PREFIJOS_BOOTSTRAP
+    bridge = Bridge(Config(url="ws://localhost", token="t", project_paths={"RAG": str(tmp_path)}))
+    mensaje = {"cli": "hermes", "project_key": "RAG", "mode": "preview", "files": [{"path": "x", "content": "", "sha256": ""}]}
+    with pytest.raises(ValueError, match="Hermes no tiene una carpeta"):
+        bridge._aplicar_bootstrap(mensaje)

@@ -1,15 +1,9 @@
-"""Doble de `hermes` para las pruebas. Emite el JSONL real de
-`hermes chat --format stream-json` (hermes-agent 0.21.5: system/init, tool_use,
-tool_result, text, result -- capturado en vivo, RAG-187) y guarda argv en
-$RAGNAR_BRIDGE_ESTADO_DIR/../argvs_hermes.jsonl (via variable de entorno que
-el test setea) para que el test compruebe que flags recibio.
+"""Doble de `hermes` para las pruebas: emite el JSONL de `hermes chat --format
+stream-json` y guarda su argv en un archivo junto al directorio de estado.
 
 Guiones segun el prompt (`--query=<prompt>`):
-  TOOL     -> corre una herramienta (tool_use + tool_result) antes del texto
-  FAILED   -> result con exit_code != 0
-  CRASH    -> sale con codigo 3 sin emitir result
-  SLEEP    -> se cuelga
-"""
+  TOOL -> tool_use + tool_result antes del texto; FAILED -> result con exit_code != 0;
+  CRASH -> codigo 3 sin emitir result; SLEEP -> se cuelga."""
 
 import json
 import os
@@ -47,8 +41,6 @@ if "CRASH" in query:
     sys.exit(3)
 
 if "TOOL" in query:
-    # Forma real capturada en vivo (RAG-187): un solo `text` al final, con el
-    # "\n\n" que el propio Hermes antepone despues de una herramienta.
     out({"type": "tool_use", "name": "terminal", "input": {"command": "echo $((40 + 2))"}, "timestamp": 1790621279239})
     out({"type": "tool_result", "name": "terminal", "output": "42", "duration_ms": 838, "is_error": False, "timestamp": 1790621280082})
     out({"type": "text", "text": "\n\n42", "timestamp": 1790621282933})

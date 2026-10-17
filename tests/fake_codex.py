@@ -1,16 +1,9 @@
-"""Doble de `codex` para las pruebas. Emite el JSONL de `codex exec --json`
-(codex-cli 0.157.0: thread.started / turn.started / item.* / turn.completed) y
-guarda argv y entorno relevante en $CODEX_HOME/argvs.jsonl para que el test
-compruebe que flags y variables recibio.
+"""Doble de `codex` para las pruebas: emite el JSONL de `codex exec --json` y guarda
+argv y entorno relevante en $CODEX_HOME/argvs.jsonl.
 
 Guiones segun el prompt (ultimo argumento):
-  TOOL     -> ejecuta un comando (item.started + item.completed)
-  FILE     -> cambia un archivo
-  MCP      -> llama a una tool MCP
-  FAILED   -> turn.failed y salida con codigo 1
-  CRASH    -> sale con codigo 3 sin emitir turn.completed
-  SLEEP    -> se cuelga
-"""
+  TOOL -> ejecuta un comando; FILE -> cambia un archivo; MCP -> llama a una tool MCP;
+  FAILED -> turn.failed y codigo 1; CRASH -> codigo 3 sin turn.completed; SLEEP -> se cuelga."""
 
 import json
 import os
@@ -27,16 +20,14 @@ if argv == ["login", "status"]:
     sys.exit(0 if os.environ.get("FAKE_CODEX_LOGIN", "1") == "1" else 1)
 
 if argv == ["app-server"]:
-    # JSON-RPC por stdio: forma real de codex-cli 0.157.0.
     if os.environ.get("FAKE_CODEX_SPAWN_ORPHAN"):
-        # Simula el bug conocido de codex-cli (openai/codex#15379, #47735):
-        # `app-server` deja un descendiente que sobrevive a que lo maten a
-        # el solo. Escribe su PID para que el test lo pueda revisar.
         import subprocess as sp
 
         huerfano = sp.Popen(
             [sys.executable, "-c", "import time; time.sleep(30)"],
-            start_new_session=True,
+            stdin=sp.DEVNULL,
+            stdout=sp.DEVNULL,
+            stderr=sp.DEVNULL,
         )
         with open(os.environ["FAKE_CODEX_SPAWN_ORPHAN"], "w", encoding="utf-8") as f:
             f.write(str(huerfano.pid))

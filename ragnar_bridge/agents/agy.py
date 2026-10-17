@@ -1,28 +1,15 @@
-"""Antigravity CLI (`agy`, github.com/google-antigravity/antigravity-cli).
+"""Adaptador de Antigravity CLI (`agy`).
 
-Diferencias con Claude Code que el adaptador absorbe (verificado contra agy
-1.1.27, ver tests/test_agy.py para las formas reales de los eventos):
-
-* Su stream-json es otro (`init`/`step_update`/`result`): `TraductorAgy` lo
-  convierte al formato de Claude que Ragnar espera.
-* No hay `--session-id`: agy asigna el id de conversacion y lo informa en
-  `init`. Se guarda la correspondencia session_id(Ragnar) -> conversation_id en
+* `TraductorAgy` convierte su stream-json (`init`/`step_update`/`result`) al de Claude.
+* agy asigna el id de conversacion: se guarda session_id -> conversation_id en
   `agy-estado.json` y los turnos siguientes usan `--conversation`.
-* No hay `--append-system-prompt`: las instrucciones de Ragnar se anteponen al
-  prompt del primer turno de cada conversacion (despues viven en el hilo).
-* Tickets de Ragnar (MCP): agy tiene UN archivo global de servidores MCP y sus
-  cabeceras no expanden variables de entorno, asi que un token por turno no
-  cabe ahi. Se registra una sola vez `ragnar-tickets` como servidor stdio
-  (`mcp_proxy`) y el token de cada turno viaja en el ENTORNO del agy de ese
-  turno, que el servidor hereda. Ver `mcp_proxy.py`.
-* En modo headless una herramienta que pide permiso se DENIEGA sola (y
-  `permissions.allow` de su settings.json se ignora en headless, issue #548 de
-  antigravity-cli). La salida es `--dangerously-skip-permissions`, que aprueba
-  TODO. Por eso el bridge no lo pasa de entrada: deja que agy deniegue, le
-  cuenta a Ragnar que hace falta un permiso (marcador [[PERMISO]], el mismo
-  flujo de la tarjeta "Autorizar" que Claude) y, solo si el humano aprueba,
-  relanza esa conversacion con el flag. Ver `Config.agy_permisos`.
-"""
+* Sin `--append-system-prompt`: las instrucciones van antepuestas al primer prompt.
+* Su config MCP es global y no expande variables: `ragnar-tickets` se registra una
+  vez como servidor stdio (`mcp_proxy`) y el token de cada turno viaja en el entorno
+  del agy, que el modelo puede leer desde un shell (es el token efimero del turno).
+* En headless una herramienta que pide permiso se deniega sola y `permissions.allow`
+  se ignora: el turno se relanza con `--dangerously-skip-permissions` solo si el
+  humano aprueba en Ragnar (marcador [[PERMISO]]), segun `Config.agy_permisos`."""
 
 import json
 import logging
@@ -41,24 +28,17 @@ from .base import Adaptador, Comando, Traductor, bloque_de_cuota
 
 log = logging.getLogger("ragnar_bridge")
 
-# Lo que Ragnar recibe como `herramienta` del permiso pedido. Es una etiqueta,
-# no un patron: agy no concede por herramienta en headless, concede la
-# conversacion entera.
 PERMISO_AGY = "agy:permisos"
 
 _SEPARADOR = "\n\n---\n\n"
 
-# Nombre con el que se registra el puente en el archivo global de MCP de agy: uno
-# propio, para no pisar un servidor "tickets" que ya tengas por tu cuenta.
 NOMBRE_MCP = "ragnar-tickets"
 _INTENTOS_REGISTRO = 3
 
-# Primera version de agy que contesta `-p "/usage"` sin arrancar un turno.
 _AGY_USAGE_DESDE = (1, 1, 11)
 
 
 def conversacion_existe(cfg: Config, conversation_id: str) -> bool:
-    """agy guarda cada conversacion como <agy_dir>/conversations/<id>.db."""
     ruta = Path(os.path.expanduser(cfg.agy_dir)) / "conversations" / f"{conversation_id}.db"
     return ruta.is_file()
 
@@ -71,9 +51,6 @@ class AgyAdaptador(Adaptador):
         return self.cfg.agy_cmd
 
     def sesion_iniciada(self) -> Optional[bool]:
-        """agy no tiene un comando de estado: `agy models` pide la lista a la
-        cuenta (no gasta cuota) y sale con codigo distinto de 0 si no hay
-        sesion. Un timeout o un fallo al lanzarlo no prueba nada (sin red)."""
         try:
             salida = subprocess.run(
                 [*self.cmd, "models"], capture_output=True, text=True, timeout=45
@@ -83,10 +60,6 @@ class AgyAdaptador(Adaptador):
         return salida.returncode == 0
 
     def cuota(self, version: str) -> Optional[dict]:
-        """`agy -p "/usage" --output-format json`: desde agy 1.1.11 los comandos
-        de solo lectura se contestan en modo print SIN arrancar un turno ni
-        gastar cuota. Con un agy mas viejo `/usage` iria al modelo como un
-        prompt cualquiera, asi que ahi ni se intenta."""
         match = re.search(r"(\d+)\.(\d+)\.(\d+)", version or "")
         if not match or tuple(map(int, match.groups())) < _AGY_USAGE_DESDE:
             return None
@@ -118,12 +91,8 @@ class AgyAdaptador(Adaptador):
             return None
         return {"plan": None, "bloques": bloques} if bloques else None
 
-    # ---- MCP de tickets
 
     def asegurar_mcp(self) -> bool:
-        """Registra `ragnar-tickets` en agy (una vez por proceso del bridge;
-        `mcp add` reemplaza si ya existe, asi que tambien sirve tras mover el
-        bridge de venv). Si agy no lo acepta el turno sigue, sin tickets."""
         if getattr(self, "_mcp_listo", False):
             return True
         intentos = getattr(self, "_mcp_intentos", 0)
@@ -158,7 +127,6 @@ class AgyAdaptador(Adaptador):
             env["RAGNAR_TICKETS_AGENT"] = "agy"
         return env
 
-    # ---- estado propio (session_id de Ragnar -> conversacion de agy)
 
     @property
     def _ruta_estado(self) -> Path:
@@ -187,7 +155,6 @@ class AgyAdaptador(Adaptador):
         sesiones.setdefault(session_id, {}).update(campos)
         self._guardar(sesiones)
 
-    # ---- comando
 
     def preparar(self, turno: Turno, username: str) -> Comando:
         cfg = self.cfg
@@ -196,9 +163,9 @@ class AgyAdaptador(Adaptador):
         reanudar = bool(conversacion) and conversacion_existe(cfg, conversacion)
 
         permisos = bool(sesion.get("permisos"))
-        if turno.conceder and cfg.agy_permisos == "preguntar" and not permisos:
-            # El humano aprobo en la app: desde ahora esta conversacion corre
-            # con las herramientas aprobadas.
+        if turno.conceder and turno.conceder != PERMISO_AGY:
+            log.warning("Ragnar pidio conceder %r a agy; solo vale %r: se ignora.", turno.conceder, PERMISO_AGY)
+        elif turno.conceder and cfg.agy_permisos == "preguntar" and not permisos:
             permisos = True
             self.actualizar_sesion(turno.session_id, permisos=True)
         elif turno.conceder and cfg.agy_permisos != "preguntar":
@@ -212,11 +179,6 @@ class AgyAdaptador(Adaptador):
             texto = turno.system_append + _SEPARADOR + turno.prompt_fallback
         else:
             texto = turno.prompt_fallback
-        # El prompt va PEGADO al flag (`-p=<prompt>`, un solo argumento): con
-        # `-p <prompt>` agy toma como prompt lo que venga despues, y si es un
-        # flag ("--output-format") falla; y un prompt que empieza con "-" (o
-        # tiene saltos de linea) tampoco se confunde con un flag. Es la forma
-        # que el propio agy recomienda en su mensaje de error.
         argv = [
             *cfg.agy_cmd,
             f"-p={texto}",
@@ -240,26 +202,13 @@ class AgyAdaptador(Adaptador):
 
 
 class TraductorAgy(Traductor):
-    """Convierte los eventos de agy al stream-json de Claude que Ragnar parsea:
-
-      init                       -> (guarda conversation_id)
-      step agent_response        -> stream_event / content_block_delta / text_delta
-      step tool ACTIVE           -> assistant / tool_use
-      step tool DONE|ERROR       -> user / tool_result
-      result                     -> [marcador de permiso] + result
-    """
-
     def __init__(self, adaptador: AgyAdaptador, turno: Turno):
         self._ad = adaptador
         self._turno = turno
         self.conversation_id: Optional[str] = None
-        # Uso sumado de los pasos de ESTE proceso. `result.usage` de agy es
-        # acumulado de toda la conversacion, y Ragnar suma el uso de cada
-        # turno: usarlo tal cual contaria dos veces lo de los turnos previos.
         self._entrada = 0
         self._salida = 0
         self._cache = 0
-        # Herramientas que agy nego por falta de permiso: nombre -> parametros.
         self._denegadas: List[dict] = []
         self._herramientas: Dict[int, dict] = {}
         self._resultado_emitido = False
@@ -366,9 +315,6 @@ class TraductorAgy(Traductor):
         return salida
 
     def _aviso_permiso(self, denegadas: List[dict]) -> str:
-        """Texto FINAL del turno cuando agy nego una herramienta. Con
-        agy_permisos=preguntar lleva el marcador [[PERMISO]] (tiene que ser lo
-        ultimo del turno para que Ragnar lo tome); con otro modo solo avisa."""
         acciones = ", ".join(sorted({str(d.get("display_name") or d.get("action")) for d in denegadas}))
         detalle = "; ".join(
             f"{h.get('name')}: {json.dumps(h.get('input'), ensure_ascii=False)[:200]}"

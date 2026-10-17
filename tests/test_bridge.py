@@ -1,3 +1,6 @@
+"""Ciclo basico de un turno con Claude: auth, reenvio de stream-json, sesiones,
+cancelacion, errores fatales, concesion de permisos y URL del MCP de tickets."""
+
 import asyncio
 import json
 import sys
@@ -10,8 +13,8 @@ from ragnar_bridge import PROTOCOLO
 from ragnar_bridge.bridge import Bridge, ErrorFatal, ejecutar
 from ragnar_bridge.config import Config
 from helpers import FAKE, TOKEN, FakeRagnar, run as _run
-from ragnar_bridge.agents.claude import conceder_permiso, url_mcp_tickets
-from ragnar_bridge.protocolo import permiso_es_catastrofico
+from ragnar_bridge.agents.claude import conceder_permiso, ruta_permisos, url_mcp_tickets
+from ragnar_bridge.protocolo import permiso_es_catastrofico, regla_concedible
 
 
 def _cfg(tmp_path, ragnar, **kw) -> Config:
@@ -63,7 +66,6 @@ async def test_primer_turno_usa_session_id_y_fallback_luego_resume(conectado, ra
     assert "--session-id" in argv and "--resume" not in argv
     assert argv[-1] == "CON CONTEXTO"
 
-    # Simula que el CLI dejo su sesion: <config_dir>/projects/<cwd saneado>/<id>.jsonl
     import re
     carpeta = re.sub(r"[^a-zA-Z0-9]", "-", str((tmp_path / "work").resolve()))
     destino = tmp_path / "claude" / "projects" / carpeta
@@ -108,19 +110,32 @@ async def test_session_id_invalido_se_rechaza(conectado, ragnar):
     assert fin["type"] == "error"
 
 
-async def test_conceder_escribe_settings_del_usuario(conectado, ragnar, tmp_path):
-    tid = str(uuid.uuid4())
-    await ragnar.enviar(_run(tid, conceder="Bash(docker *)"))
-    await ragnar.hasta_done(tid)
-    settings = json.loads((tmp_path / "claude" / "settings.json").read_text())
-    assert settings["permissions"]["allow"] == ["Bash(docker *)"]
-
-
-async def test_conceder_rechaza_patrones_catastroficos(conectado, ragnar, tmp_path):
-    tid = str(uuid.uuid4())
-    await ragnar.enviar(_run(tid, conceder="Bash(*)"))
-    await ragnar.hasta_done(tid)
+async def test_conceder_es_de_la_conversacion_y_no_toca_tu_settings(conectado, ragnar, tmp_path):
+    tid, otra = str(uuid.uuid4()), str(uuid.uuid4())
+    await ragnar.enviar(_run(tid, conceder="Bash(docker ps:*)"))
+    eventos, _ = await ragnar.hasta_done(tid)
     assert not (tmp_path / "claude" / "settings.json").exists()
+    propio = ruta_permisos(tmp_path, tid)
+    assert json.loads(propio.read_text())["permissions"]["allow"] == ["Bash(docker ps:*)"]
+    argv = eventos[0]["argv"]
+    assert argv[argv.index("--settings") + 1] == str(propio)
+
+    await ragnar.enviar(_run(tid, prompt="sigue"))
+    eventos, _ = await ragnar.hasta_done(tid)
+    assert eventos[0]["argv"][eventos[0]["argv"].index("--settings") + 1] == str(propio)
+    await ragnar.enviar(_run(otra))
+    eventos, _ = await ragnar.hasta_done(otra)
+    assert "--settings" not in eventos[0]["argv"]
+
+
+@pytest.mark.parametrize("regla", ["Bash(*)", "Bash", "Bash(:*)", "Bash(sh:*)", "Bash(python3 *)"])
+async def test_conceder_rechaza_reglas_amplias(conectado, ragnar, tmp_path, regla):
+    tid = str(uuid.uuid4())
+    await ragnar.enviar(_run(tid, conceder=regla))
+    eventos, _ = await ragnar.hasta_done(tid)
+    assert not (tmp_path / "claude" / "settings.json").exists()
+    assert not ruta_permisos(tmp_path, tid).exists()
+    assert "--settings" not in eventos[0]["argv"]
 
 
 async def test_desconexion_mata_los_turnos_en_curso(tmp_path, ragnar):
@@ -172,11 +187,34 @@ def test_permiso_catastrofico():
 
 
 def test_conceder_no_duplica(tmp_path):
-    cfg = Config(url="ws://x", token="t", agents=["claude"], config_dir=str(tmp_path))
-    assert conceder_permiso(cfg, "WebFetch")
-    assert conceder_permiso(cfg, "WebFetch")
-    datos = json.loads((tmp_path / "settings.json").read_text())
+    sid = str(uuid.uuid4())
+    assert conceder_permiso(tmp_path, sid, "WebFetch")
+    assert conceder_permiso(tmp_path, sid, " WebFetch ")
+    datos = json.loads(ruta_permisos(tmp_path, sid).read_text())
     assert datos["permissions"]["allow"] == ["WebFetch"]
+
+
+@pytest.mark.parametrize(
+    "regla",
+    [
+        "Bash", "bash", "Bash()", "Bash(*)", "Bash(**)", "Bash(* )", "Bash(:*)", "Bash( :* )",
+        "Bash(sh:*)", "Bash(bash -c *)", "Bash(python:*)", "Bash(python3.12 *)", "Bash(node *)",
+        "Bash(/usr/bin/python3 *)", "Bash(sudo:*)", "Bash(env *)", "Bash(xargs:*)", "Bash(*docker*)",
+        "PowerShell", "PowerShell(*)", "PowerShell(pwsh:*)", "*", "mcp__*", "Bash(rm -rf /)", "",
+        "Bash(ls)\nBash", "Bash(docker; rm:*)",
+    ],
+)
+def test_regla_concedible_rechaza_reglas_amplias(regla):
+    assert not regla_concedible(regla)
+
+
+@pytest.mark.parametrize(
+    "regla",
+    ["WebFetch", "Read", "Edit", "Bash(docker *)", "Bash(docker ps:*)", "Bash(npm run test:*)",
+     "Bash(git status)", "Bash(python3 manage.py check)", "mcp__tickets__ver_ticket"],
+)
+def test_regla_concedible_acepta_reglas_concretas(regla):
+    assert regla_concedible(regla)
 
 
 def test_url_mcp_tickets():

@@ -1,8 +1,5 @@
-"""El MCP de tickets usa el token del USUARIO que escribio, no uno fijo.
-
-Un bridge se comparte entre el grupo: si el token de tickets fuera el de la
-config, todos actuarian como su dueno y verian sus empresas.
-"""
+"""El MCP de tickets usa el token del usuario que escribio en ese turno, no el de la
+config, y cada conversacion tiene su propio archivo de MCP."""
 
 import json
 import uuid
@@ -32,8 +29,6 @@ def test_el_token_de_turno_gana_al_de_la_config():
 
 
 def test_si_ragnar_no_pudo_emitirlo_el_turno_queda_sin_tickets():
-    # `tickets_token: null` NO cae al token de la config: seria actuar como el
-    # dueno del bridge.
     turno = validar_run(_run(tickets_token=None))
     assert turno.token_de_turno is True
     assert token_de_tickets(_cfg(tickets_token="ragagt_config"), turno) is None

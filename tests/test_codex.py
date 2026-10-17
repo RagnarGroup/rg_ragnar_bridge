@@ -1,6 +1,5 @@
-"""Adaptador de Codex CLI: traduccion de eventos, sesiones por hilo, comando
-seguro y config aislada. Corre contra tests/fake_codex.py, que emite el JSONL de
-`codex exec --json` (codex-cli 0.157.0)."""
+"""Adaptador de Codex: traduccion de eventos, sesiones por hilo, comando seguro y
+config aislada, contra tests/fake_codex.py."""
 
 import asyncio
 import json
@@ -19,7 +18,6 @@ from ragnar_bridge.config import Config, ConfigError, cargar
 
 def _cfg(tmp_path, ragnar, **kw) -> Config:
     return Config(
-        # Con la ruta real del bridge, para que se pueda derivar la URL del MCP de tickets.
         url=ragnar.url + "/api/v1/bridge/ws",
         token=TOKEN,
         agents=["codex"],
@@ -53,7 +51,6 @@ def _invocaciones(tmp_path):
 
 
 def _overrides(argv) -> dict:
-    """Los pares `-c clave=valor` del comando, con el valor ya decodificado."""
     pares = {}
     for i, a in enumerate(argv):
         if a == "-c":
@@ -91,11 +88,9 @@ async def test_traduce_texto_y_uso_al_formato_de_claude(arrancar, ragnar):
     eventos, fin = await ragnar.hasta_done(tid)
 
     assert fin["type"] == "done" and fin["exit_code"] == 0
-    # Cada mensaje entero de Codex se separa del anterior; el reasoning no sale.
     assert _texto(eventos) == "Hola\n\nmundo"
     resultado = eventos[-1]
     assert resultado["type"] == "result" and resultado["is_error"] is False
-    # input_tokens de Codex INCLUYE lo cacheado; Ragnar suma cada campo aparte.
     assert resultado["usage"] == {
         "input_tokens": 600,
         "output_tokens": 20,
@@ -112,7 +107,6 @@ async def test_comandos_se_traducen_a_tool_use_y_tool_result(arrancar, ragnar):
 
     usos = [e["message"]["content"][0] for e in eventos if e["type"] == "assistant"]
     resultados = [e["message"]["content"][0] for e in eventos if e["type"] == "user"]
-    # item.started + item.completed del mismo comando = UN tool_use y UN tool_result.
     assert [u["id"] for u in usos] == ["item_1", "item_2"]
     assert usos[0]["name"] == "Bash" and usos[0]["input"] == {"command": 'bash -lc "echo hola-bridge"'}
     assert [r["tool_use_id"] for r in resultados] == ["item_1", "item_2"]
@@ -148,7 +142,6 @@ async def test_primer_turno_lleva_las_instrucciones_y_el_prompt_va_tras_el_separ
     inv = _invocaciones(tmp_path)[0]
     argv = inv["argv"]
     assert argv[0] == "exec" and "--json" in argv and "resume" not in argv
-    # Un prompt que empieza como un flag no se lee como flag: va tras `--`.
     assert argv[-2] == "--" and _prompt(argv).startswith("PROTOCOLO") and _prompt(argv).endswith(raro)
     assert _overrides(argv)["model"] == "gpt-x"
     assert _overrides(argv)["model_reasoning_effort"] == "medium"
@@ -162,7 +155,6 @@ async def test_modelo_y_razonamiento_se_fijan_siempre_por_defecto(arrancar, ragn
     await ragnar.hasta_done(tid)
     await ragnar.enviar(run(tid, prompt="dos"))
     await ragnar.hasta_done(tid)
-    # En el primer turno y tambien al retomar el hilo (exec resume).
     for inv in _invocaciones(tmp_path):
         ov = _overrides(inv["argv"])
         assert ov["model"] == "gpt-5.6-terra" and ov["model_reasoning_effort"] == "medium"
@@ -189,7 +181,6 @@ async def test_segundo_turno_retoma_el_hilo(arrancar, ragnar, tmp_path):
     estado = json.loads((tmp_path / "codex-estado.json").read_text())
     hilo = estado["sesiones"][tid]["thread_id"]
     assert segundo[0] == "exec" and segundo[1] == "resume" and "--json" in segundo
-    # Retomando, Codex ya recuerda: va solo el mensaje nuevo, sin instrucciones.
     assert segundo[-3:] == ["--", hilo, "dos"]
 
 
@@ -225,8 +216,29 @@ async def test_sandbox_por_defecto_es_read_only(arrancar, ragnar, tmp_path):
     await ragnar.hasta_done(tid)
     argv = _invocaciones(tmp_path)[0]["argv"]
     assert _overrides(argv)["sandbox_mode"] == "read-only"
-    assert "--dangerously-bypass-approvals-and-sandbox" in argv
+    assert "--dangerously-bypass-approvals-and-sandbox" not in argv
+    assert _overrides(argv)["approval_policy"] == "never"
     assert "sandbox_workspace_write.writable_roots" not in _overrides(argv)
+
+
+@pytest.mark.parametrize(
+    "sandbox, bypass",
+    [("read-only", False), ("workspace-write", False), ("danger-full-access", True)],
+)
+async def test_bypass_solo_con_danger_full_access(arrancar, ragnar, tmp_path, sandbox, bypass):
+    await arrancar(codex_sandbox=sandbox)
+    tid = str(uuid.uuid4())
+    await ragnar.enviar(run(tid, prompt="uno"))
+    await ragnar.hasta_done(tid)
+    await ragnar.enviar(run(tid, prompt="dos"))
+    await ragnar.hasta_done(tid)
+    primero, segundo = [i["argv"] for i in _invocaciones(tmp_path)]
+    assert segundo[1] == "resume"
+    for argv in (primero, segundo):
+        assert ("--dangerously-bypass-approvals-and-sandbox" in argv) is bypass
+        ov = _overrides(argv)
+        assert ov["sandbox_mode"] == sandbox
+        assert ov["approval_policy"] == "never"
 
 
 async def test_workspace_write_suma_los_add_dirs_como_raices_escribibles(arrancar, ragnar, tmp_path):
@@ -254,22 +266,18 @@ async def test_el_token_de_tickets_viaja_por_entorno_y_no_por_argv(arrancar, rag
     await ragnar.hasta_done(tid)
 
     inv = _invocaciones(tmp_path)[0]
-    # Ni el token ni la URL en el comando (`ps` los mostraria)...
     assert "ragagt_turno" not in json.dumps(inv["argv"])
     ov = _overrides(inv["argv"])
     assert ov["mcp_servers.ragnar-tickets.args"] == ["-m", "ragnar_bridge.mcp_proxy"]
     assert ov["mcp_servers.ragnar-tickets.env_vars"] == ["RAGNAR_TICKETS_URL", "RAGNAR_TICKETS_TOKEN", "RAGNAR_TICKETS_AGENT"]
-    # ...van en el entorno de ESE proceso, y no en el config.toml de nadie.
     assert inv["env"]["RAGNAR_TICKETS_TOKEN"] == "ragagt_turno"
     assert inv["env"]["RAGNAR_TICKETS_AGENT"] == "codex"
     assert inv["env"]["RAGNAR_TICKETS_URL"].endswith("/api/v1/mcp/")
     assert not (tmp_path / "codex" / "config.toml").exists()
-    # El modelo tampoco ve esas variables en sus comandos de shell.
     assert ov["shell_environment_policy.exclude"] == ["RAGNAR_*"]
 
 
 async def test_sin_token_de_tickets_no_se_declara_el_mcp(arrancar, ragnar, tmp_path, monkeypatch):
-    # Ni un token del entorno del bridge se hereda al turno.
     monkeypatch.setenv("RAGNAR_TICKETS_TOKEN", "ragagt_del_entorno")
     await arrancar()
     tid = str(uuid.uuid4())
@@ -308,9 +316,6 @@ async def test_cancel_corta_el_proceso(arrancar, ragnar):
     assert fin["type"] == "done" and fin["exit_code"] != 0
 
 
-# ---- config y conexion
-
-
 def test_config_valida_codex(tmp_path):
     ruta = tmp_path / "config.json"
     base = {"url": "wss://x/api/v1/bridge/ws", "token": "t", "agents": ["codex"]}
@@ -321,7 +326,6 @@ def test_config_valida_codex(tmp_path):
     cfg = cargar(ruta)
     assert cfg.codex_cmd == ["codex"] and cfg.codex_sandbox == "read-only" and cfg.codex_home == "~/.codex"
     assert cfg.codex_model == "gpt-5.6-terra" and cfg.codex_reasoning == "medium"
-    # `null` (lo que escribe init) vale el default; "" es no fijarlo.
     ruta.write_text(json.dumps({**base, "codex_model": None, "codex_reasoning": None}))
     assert cargar(ruta).codex_model == "gpt-5.6-terra"
     ruta.write_text(json.dumps({**base, "codex_model": "", "codex_reasoning": ""}))
@@ -336,9 +340,6 @@ async def test_probar_conexion_anuncia_codex(ragnar, tmp_path):
     cfg = Config(url=ragnar.url, token=TOKEN, agents=["codex"], codex_cmd=[sys.executable, FAKE_CODEX], codex_home=str(tmp_path / "codex"))
     assert await probar_conexion(cfg) == "t"
     assert ragnar.auth_frame["protocol"] == PROTOCOLO and ragnar.auth_frame["agents"][0]["name"] == "codex"
-
-
-# ---- cuota (/usage)
 
 
 def test_cuota_de_codex_se_lee_de_app_server(tmp_path):
@@ -364,10 +365,6 @@ def test_si_app_server_no_existe_la_cuota_es_none_y_no_lanza(tmp_path):
 
 @pytest.mark.skipif(os.name != "posix", reason="matar el grupo de procesos es POSIX-only")
 def test_cuota_no_deja_huerfanos_de_app_server(tmp_path, monkeypatch):
-    """Regresion del incidente 2026-09-28: `app-server` puede dejar un
-    descendiente vivo que ignora que maten solo su PID (openai/codex#15379).
-    Sondear la cuota cada `reprobar_cada` sin esto acumula un proceso por
-    ciclo hasta agotar la RAM del host."""
     from ragnar_bridge.agents.codex import CodexAdaptador
 
     (tmp_path / "codex").mkdir()
@@ -378,6 +375,21 @@ def test_cuota_no_deja_huerfanos_de_app_server(tmp_path, monkeypatch):
     assert CodexAdaptador(cfg, tmp_path).cuota("x") is not None
 
     pid = int(pid_file.read_text().strip())
-    time.sleep(0.5)  # darle tiempo al kill del grupo a propagarse
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
+    assert _murio(pid), "el descendiente de app-server sobrevivio al corte del grupo"
+
+
+def _murio(pid: int, espera: float = 5.0) -> bool:
+    limite = time.monotonic() + espera
+    while time.monotonic() < limite:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        try:
+            with open(f"/proc/{pid}/stat", encoding="utf-8") as f:
+                if f.read().rsplit(")", 1)[-1].split()[0] == "Z":
+                    return True
+        except OSError:
+            return True
+        time.sleep(0.1)
+    return False

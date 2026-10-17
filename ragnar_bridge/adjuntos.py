@@ -1,10 +1,7 @@
-"""Imagenes que la persona adjunta a un mensaje del chat de Ragnar.
+"""Imagenes adjuntas a un mensaje del chat de Ragnar.
 
-Los CLIs reciben el mensaje como texto, asi que la imagen no viaja dentro: se
-guarda en <estado>/adjuntos/<conversacion>/ y al mensaje se le suma la ruta,
-que el agente abre con su herramienta de lectura de archivos. Sirve igual
-para cualquier CLI que lea un archivo del disco.
-"""
+Se guardan en <estado>/adjuntos/<conversacion>/ y al mensaje se le suma su ruta,
+porque los CLIs reciben el mensaje solo como texto y abren la imagen del disco."""
 
 import dataclasses
 import os
@@ -23,8 +20,6 @@ def carpeta(estado_dir: Path) -> Path:
 
 
 def guardar(estado_dir: Path, turno: Turno) -> Turno:
-    """Escribe los adjuntos de `turno` y devuelve el turno con sus rutas
-    sumadas al mensaje. Sin adjuntos devuelve el mismo turno."""
     if not turno.adjuntos:
         return turno
     raiz = carpeta(estado_dir)

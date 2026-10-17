@@ -1,25 +1,11 @@
-"""Puente MCP stdio -> HTTP para las tools de tickets de Ragnar en `agy`.
+"""Puente MCP stdio -> HTTP para las tools de tickets de Ragnar en agy y Codex.
 
-Claude Code acepta un archivo de MCP por invocacion (`--mcp-config`), asi que
-cada turno lleva su propio token. `agy` no: sus servidores MCP viven en UN
-archivo global (`~/.gemini/config/mcp_config.json`) y sus cabeceras HTTP no
-expanden variables de entorno (probado: manda el literal `${VAR}`). Con un
-token fijo ahi, todo el grupo actuaria como una sola persona.
-
-Salida: se registra UNA vez este proceso como servidor stdio, y el bridge le
-pasa el token de cada turno por el ENTORNO del propio `agy` (un servidor stdio
-hereda el entorno de quien lo lanza; tambien probado). Asi el token nunca se
-escribe en disco y dos personas hablando a la vez no se pisan.
-
-Solo libreria estandar: corre con el mismo Python que el bridge. Variables:
-
-  RAGNAR_TICKETS_URL     https://<panel>/api/v1/mcp
-  RAGNAR_TICKETS_TOKEN   token de turno del usuario que escribio
-  RAGNAR_TICKETS_AGENT   nombre que queda en el historial (opcional)
-
-Sin URL o sin token no hay tools: el servidor arranca igual (agy espera el
-saludo MCP y, si nunca llega, se queda colgado) pero anuncia una lista vacia.
-"""
+Se registra una sola vez como servidor stdio y toma el token de cada turno del
+entorno que hereda del CLI, asi el token nunca se escribe en disco ni se mezcla
+entre personas. Solo libreria estandar. Variables:
+  RAGNAR_TICKETS_URL, RAGNAR_TICKETS_TOKEN, RAGNAR_TICKETS_AGENT (opcional).
+Sin URL o sin token arranca igual y anuncia una lista vacia: el CLI espera el
+saludo MCP y sin el se cuelga."""
 
 import json
 import os
@@ -31,6 +17,7 @@ from urllib.parse import urljoin, urlsplit
 
 VERSION_PROTOCOLO = "2025-06-18"
 TIMEOUT = 120
+TOPE_RESPUESTA = 16 * 1024 * 1024
 
 
 def _error(id_, mensaje: str) -> dict:
@@ -45,12 +32,11 @@ class Puente:
         self.sesion: Optional[str] = None
         self.protocolo: Optional[str] = None
 
-    # ---- sin token: un servidor MCP valido y vacio
 
     def _vacio(self, msg: dict) -> Optional[dict]:
         id_ = msg.get("id")
         if id_ is None:
-            return None  # notificacion
+            return None
         metodo = msg.get("method")
         if metodo == "initialize":
             pedido = (msg.get("params") or {}).get("protocolVersion") or VERSION_PROTOCOLO
@@ -69,7 +55,6 @@ class Puente:
             return {"jsonrpc": "2.0", "id": id_, "result": {}}
         return {"jsonrpc": "2.0", "id": id_, "error": {"code": -32601, "message": "Sin acceso a tickets en este turno."}}
 
-    # ---- con token: se reenvia tal cual a Ragnar
 
     def _cabeceras(self) -> dict:
         cab = {
@@ -98,9 +83,6 @@ class Puente:
             yield "\n".join(datos)
 
     def _post(self, msg: dict):
-        """POST con hasta 3 redirecciones 307/308 del MISMO servidor (Starlette
-        redirige /api/v1/mcp a /api/v1/mcp/): urllib no las sigue en un POST, y
-        una hacia OTRO host no se sigue jamas, para no mandarle el token."""
         cuerpo = json.dumps(msg).encode("utf-8")
         for _ in range(4):
             peticion = urllib.request.Request(self.url, data=cuerpo, headers=self._cabeceras(), method="POST")
@@ -121,12 +103,17 @@ class Puente:
             with self._post(msg) as resp:
                 if resp.headers.get("Mcp-Session-Id"):
                     self.sesion = resp.headers["Mcp-Session-Id"]
-                cuerpo = resp.read().decode("utf-8", errors="replace")
+                crudo = resp.read(TOPE_RESPUESTA + 1)
                 tipo = (resp.headers.get("Content-Type") or "").lower()
+            if len(crudo) > TOPE_RESPUESTA:
+                if msg.get("id") is None:
+                    return []
+                return [_error(msg["id"], f"La respuesta de Ragnar supera {TOPE_RESPUESTA // (1024 * 1024)} MiB.")]
+            cuerpo = crudo.decode("utf-8", errors="replace")
         except urllib.error.HTTPError as e:
             if msg.get("id") is None:
                 return []
-            detalle = e.read().decode("utf-8", errors="replace")[:200]
+            detalle = e.read(200).decode("utf-8", errors="replace")
             return [_error(msg["id"], f"Ragnar respondio {e.code}: {detalle}")]
         except (urllib.error.URLError, OSError) as e:
             if msg.get("id") is None:
@@ -186,7 +173,6 @@ def main() -> None:
         os.environ.get("RAGNAR_TICKETS_TOKEN") or None,
         os.environ.get("RAGNAR_TICKETS_AGENT") or "agy",
     )
-    # El protocolo es UTF-8 con independencia de la consola (en Windows seria cp1252).
     try:
         sys.stdin.reconfigure(encoding="utf-8")
         sys.stdout.reconfigure(encoding="utf-8")

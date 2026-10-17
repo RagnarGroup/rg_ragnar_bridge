@@ -1,9 +1,6 @@
-"""ragnar-bridge: corre el CLI de Claude Code, de Antigravity (agy), de Codex o
-de Hermes Agent en TU servidor y le reenvia a Ragnar lo que emite, por una
-conexion WebSocket saliente. Ver README.md."""
+"""ragnar-bridge: corre Claude Code, Antigravity (agy), Codex o Hermes en tu
+servidor y le reenvia a Ragnar lo que emiten, por un WebSocket saliente."""
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
-# Version del protocolo de bridge_hub.py (ragnar_group_back). Si Ragnar habla
-# otra, rechaza la conexion con un mensaje pidiendo actualizar el bridge.
-PROTOCOLO = 1
+PROTOCOLO = 2
