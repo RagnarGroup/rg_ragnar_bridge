@@ -1,13 +1,10 @@
-"""`ragnar-bridge sync --once` y `ragnar-bridge publicar` (RAG-217): el
-catalogo de bootstrap de Ragnar como unica fuente de la config de los agentes.
+"""`ragnar-bridge sync --once` y `ragnar-bridge publicar` contra el catalogo de
+bootstrap de Ragnar.
 
-* sync: baja el manifiesto vigente (`GET /bootstrap/manifest`, con contenido)
-  y lo escribe con la politica `auto` de sincronizar.py: nunca pisa lo editado
-  a mano. Pensado para un hook `SessionStart` de Claude Code (ver README).
-* publicar: sube cada archivo de una carpeta que caiga bajo los prefijos
-  permitidos de ese CLI como artefacto (`POST /bootstrap/artifacts`, solo
-  administrador), y solo si su sha cambio respecto de la revision vigente.
-"""
+* sync: baja el manifiesto vigente y lo escribe con la politica `auto`, que
+  nunca pisa lo editado a mano.
+* publicar: sube como artefacto cada archivo bajo los prefijos permitidos del
+  CLI cuyo sha cambio respecto de la revision vigente (solo administrador)."""
 
 import hashlib
 import os

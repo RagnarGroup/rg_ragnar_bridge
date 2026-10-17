@@ -1,6 +1,5 @@
-"""Adaptador de Antigravity (agy): traduccion de eventos, sesiones por
-conversacion y flujo de permisos. Corre contra tests/fake_agy.py, que emite los
-eventos reales de agy 1.1.27."""
+"""Adaptador de agy: traduccion de eventos, sesiones por conversacion y flujo de
+permisos, contra tests/fake_agy.py."""
 
 import asyncio
 import json

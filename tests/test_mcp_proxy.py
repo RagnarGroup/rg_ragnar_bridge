@@ -1,5 +1,5 @@
-"""mcp_proxy: el puente stdio -> HTTP que le da a agy las tools de tickets con el
-token de CADA turno (agy no puede llevarlo en su archivo global de MCP)."""
+"""mcp_proxy: reenvio stdio -> HTTP con el token de cada turno, redirecciones,
+respuestas SSE y errores, y su registro en agy."""
 
 import io
 import json

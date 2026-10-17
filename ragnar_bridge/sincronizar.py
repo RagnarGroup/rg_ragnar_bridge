@@ -1,19 +1,9 @@
-"""Escritura de agentes/skills del catalogo de Ragnar en un proyecto local
-(RAG-155/217). Lo usan las tres puntas: el frame `bootstrap` del bridge
-(preview/apply/auto), `ragnar-bridge sync --once` en el PC y
-`ragnar-bridge publicar`.
+"""Escritura de agentes/skills del catalogo de Ragnar en un proyecto local, para el
+frame `bootstrap` (preview/apply/auto), `sync --once` y `publicar`.
 
-Politica `auto` (la de los avisos de Ragnar y la de `sync`):
-* el archivo no existe -> se escribe ("written");
-* ya tiene ese contenido -> nada ("unchanged");
-* no se toco desde la ultima revision que se aplico aca (su sha coincide con
-  el del registro local) -> se actualiza ("updated");
-* cualquier otro caso (editado a mano, o existia antes sin pasar por Ragnar)
-  -> NO se pisa: "conflict".
-
-El registro de sha aplicados vive en el directorio de estado del bridge (no en
-el proyecto), un JSON {raiz_del_proyecto: {ruta: sha256}}.
-"""
+Politica `auto`: escribe lo que no existe, actualiza lo que no se toco desde la
+ultima revision aplicada y nunca pisa lo editado a mano ("conflict"). El registro
+de sha aplicados vive en el directorio de estado del bridge, no en el proyecto."""
 
 import hashlib
 import json

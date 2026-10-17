@@ -1,8 +1,5 @@
-"""El MCP de tickets usa el token del USUARIO que escribio, no uno fijo.
-
-Un bridge se comparte entre el grupo: si el token de tickets fuera el de la
-config, todos actuarian como su dueno y verian sus empresas.
-"""
+"""El MCP de tickets usa el token del usuario que escribio en ese turno, no el de la
+config, y cada conversacion tiene su propio archivo de MCP."""
 
 import json
 import uuid

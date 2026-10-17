@@ -1,3 +1,5 @@
+"""Linea de comandos `ragnar-bridge`: init, doctor, run, sync y publicar."""
+
 import argparse
 import asyncio
 import getpass

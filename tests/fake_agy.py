@@ -1,14 +1,11 @@
-"""Doble de `agy` para las pruebas. Emite los MISMOS eventos que emite agy 1.1.27
-(capturados a mano contra el CLI real: init / step_update / result) y guarda su
-argv en $AGY_FAKE_DIR/argvs.jsonl para que el test compruebe que flags recibio.
+"""Doble de `agy` para las pruebas: emite init/step_update/result y guarda su argv
+en $AGY_FAKE_DIR/argvs.jsonl.
 
 Guiones segun el prompt (`-p=<prompt>`):
-  TOOL          -> pide ejecutar un comando; sin --dangerously-skip-permissions
-                   agy lo DENIEGA (denied_actions), con el flag lo ejecuta.
+  TOOL          -> pide un comando; lo deniega salvo con --dangerously-skip-permissions.
   STATUS_ERROR  -> result con status distinto de SUCCESS.
   FAIL          -> sale con codigo 3 sin emitir result.
-  SLEEP         -> se cuelga.
-"""
+  SLEEP         -> se cuelga."""
 
 import json
 import os

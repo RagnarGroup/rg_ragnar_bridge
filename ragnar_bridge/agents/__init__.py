@@ -1,3 +1,6 @@
+"""Crea los adaptadores de agente pedidos en la config y sondea cuales estan
+instalados, con sesion iniciada y, si se pide, su cuota."""
+
 from pathlib import Path
 from typing import Dict, List
 

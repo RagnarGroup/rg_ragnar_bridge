@@ -1,7 +1,5 @@
-"""Adaptador de Hermes Agent: traduccion de eventos, sesiones por conversacion
-y comando. Corre contra tests/fake_hermes.py, que emite el JSONL real de
-`hermes chat --format stream-json` (hermes-agent 0.21.5, capturado en vivo en
-servidor-personal, RAG-187)."""
+"""Adaptador de Hermes: traduccion de eventos, sesiones por conversacion y comando,
+contra tests/fake_hermes.py."""
 
 import asyncio
 import json

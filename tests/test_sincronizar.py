@@ -1,4 +1,4 @@
-"""RAG-217: bootstrap `auto` (aviso de Ragnar), `sync --once` y `publicar`."""
+"""Bootstrap `auto` desde Ragnar, `sync --once` y `publicar`, incluidos sus comandos de CLI."""
 
 import asyncio
 import hashlib

@@ -1,9 +1,5 @@
-"""Claude Code: armar su comando, saber si una sesion sigue viva, conceder
-permisos y escribir el MCP de tickets.
-
-Es la parte que antes vivia dentro de claude_orchestrator.py en el servidor de
-Ragnar (con CLAUDE_CONFIG_DIR por usuario); ahora corre aca, sobre TU sesion.
-"""
+"""Adaptador de Claude Code: arma su comando, detecta si una sesion sigue viva,
+concede permisos por conversacion y escribe el MCP de tickets de cada turno."""
 
 import json
 import logging

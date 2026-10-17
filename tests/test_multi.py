@@ -1,6 +1,5 @@
-"""Un bridge, dos agentes (claude y agy) en el mismo servidor: los detecta, le
-cuenta a Ragnar cuales funcionan, corre cada conversacion con el que Ragnar
-pida, y se entera solo si cambia el estado (login, instalacion)."""
+"""Varios agentes en un bridge: deteccion y anuncio a Ragnar, eleccion del agente por
+conversacion y re-sondeo cuando cambia su estado."""
 
 import asyncio
 import json

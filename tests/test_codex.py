@@ -1,6 +1,5 @@
-"""Adaptador de Codex CLI: traduccion de eventos, sesiones por hilo, comando
-seguro y config aislada. Corre contra tests/fake_codex.py, que emite el JSONL de
-`codex exec --json` (codex-cli 0.157.0)."""
+"""Adaptador de Codex: traduccion de eventos, sesiones por hilo, comando seguro y
+config aislada, contra tests/fake_codex.py."""
 
 import asyncio
 import json

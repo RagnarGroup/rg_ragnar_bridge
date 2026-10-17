@@ -1,15 +1,9 @@
-"""Doble de `hermes` para las pruebas. Emite el JSONL real de
-`hermes chat --format stream-json` (hermes-agent 0.21.5: system/init, tool_use,
-tool_result, text, result -- capturado en vivo, RAG-187) y guarda argv en
-$RAGNAR_BRIDGE_ESTADO_DIR/../argvs_hermes.jsonl (via variable de entorno que
-el test setea) para que el test compruebe que flags recibio.
+"""Doble de `hermes` para las pruebas: emite el JSONL de `hermes chat --format
+stream-json` y guarda su argv en un archivo junto al directorio de estado.
 
 Guiones segun el prompt (`--query=<prompt>`):
-  TOOL     -> corre una herramienta (tool_use + tool_result) antes del texto
-  FAILED   -> result con exit_code != 0
-  CRASH    -> sale con codigo 3 sin emitir result
-  SLEEP    -> se cuelga
-"""
+  TOOL -> tool_use + tool_result antes del texto; FAILED -> result con exit_code != 0;
+  CRASH -> codigo 3 sin emitir result; SLEEP -> se cuelga."""
 
 import json
 import os

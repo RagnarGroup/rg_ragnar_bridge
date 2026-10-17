@@ -1,5 +1,4 @@
-"""Que token y que URL usa el agente de un turno para hablar con los tickets de
-Ragnar. Lo comparten Claude (MCP HTTP directo) y agy (por `mcp_proxy`)."""
+"""Token y URL con que el agente de un turno habla con los tickets de Ragnar."""
 
 from typing import Optional
 from urllib.parse import urlsplit, urlunsplit

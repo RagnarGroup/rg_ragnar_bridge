@@ -1,3 +1,6 @@
+"""Adjuntos de imagen: guardado y rutas en el mensaje, acceso de Claude a la carpeta,
+rechazo de adjuntos invalidos o pesados y limpieza de conversaciones viejas."""
+
 import base64
 import os
 import time

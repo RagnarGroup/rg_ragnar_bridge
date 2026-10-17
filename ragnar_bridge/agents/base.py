@@ -1,10 +1,6 @@
-"""Interfaz de un agente (CLI) que el bridge sabe manejar.
-
-Ragnar espera SIEMPRE el mismo formato de eventos: las lineas de stream-json de
-Claude Code (`stream_event`/`assistant`/`user`/`result`). Un agente cuyo CLI
-emite otra cosa (Antigravity) trae un traductor que las convierte en el borde,
-aca, para que el orquestador de Ragnar no tenga que saber que agentes existen.
-"""
+"""Interfaz de un agente (CLI) del bridge: `Adaptador` arma el comando de cada turno
+y `Traductor` convierte su salida al stream-json de Claude Code
+(`stream_event`/`assistant`/`user`/`result`), el unico formato que Ragnar entiende."""
 
 import shutil
 import subprocess

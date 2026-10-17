@@ -1,4 +1,5 @@
-"""Forma de un `run` de Ragnar y reglas que valen para CUALQUIER agente."""
+"""Forma de un `run` de Ragnar (validacion de session_id, prompt y adjuntos) y
+reglas de permisos que valen para cualquier agente."""
 
 import base64
 import binascii

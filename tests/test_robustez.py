@@ -1,6 +1,5 @@
-"""Robustez del ciclo de vida de un turno y de la conexion: errores que no
-pueden matar la tarea en silencio, tope de tiempo, procesos huerfanos y
-reconexion (RAG-201, RAG-202, RAG-208)."""
+"""Robustez de turnos y conexion: errores que no matan la tarea en silencio, tope de
+tiempo, procesos huerfanos, reconexion con backoff y lectura segura del token en init."""
 
 import asyncio
 import json

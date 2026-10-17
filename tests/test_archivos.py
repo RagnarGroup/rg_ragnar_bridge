@@ -1,3 +1,6 @@
+"""Archivos editables desde Ragnar: lista permitida, rutas prohibidas o invalidas,
+escritura con respaldo y control de cambios, y el frame `files` del bridge."""
+
 import json
 
 import pytest

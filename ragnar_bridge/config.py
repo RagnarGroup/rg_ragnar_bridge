@@ -1,5 +1,5 @@
-"""Configuracion del bridge: un JSON chico, por defecto en
-~/.config/ragnar-bridge/config.json (o donde diga RAGNAR_BRIDGE_CONFIG)."""
+"""Configuracion del bridge: un JSON en ~/.config/ragnar-bridge/config.json (o en
+RAGNAR_BRIDGE_CONFIG), con sus valores por defecto y su validacion."""
 
 import json
 import os

@@ -1,11 +1,8 @@
-"""Archivos de configuracion que el dueno del servidor edita desde la app de
-Ragnar (boton de configuracion de la pestana Agents): el settings.json de
-Claude Code, su CLAUDE.md global y las rutas que el sume a mano.
+"""Archivos de configuracion que el dueno del servidor edita desde la app de Ragnar:
+el settings.json y el CLAUDE.md global de Claude Code mas las rutas que sume.
 
-Solo se lee y se escribe lo que esta en la lista: las dos rutas fijas mas las
-que se agregaron, guardadas en <estado>/archivos-editables.json. Ragnar manda
-la ruta y este modulo decide; nunca al reves.
-"""
+Solo se lee y escribe lo que esta en la lista (<estado>/archivos-editables.json):
+Ragnar manda la ruta pero este modulo decide."""
 
 import hashlib
 import json

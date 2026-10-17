@@ -1,34 +1,15 @@
-"""Codex CLI (`codex`, github.com/openai/codex).
+"""Adaptador de Codex CLI (`codex`).
 
-Diferencias con Claude Code que el adaptador absorbe (verificado contra
-codex-cli 0.157.0; ver tests/test_codex.py para las formas de los eventos):
-
-* Un turno es `codex exec --json <prompt>` (o `codex exec resume <thread> <prompt>`
-  para seguir una conversacion) y emite JSONL propio (`thread.started`,
-  `item.*`, `turn.completed`): `TraductorCodex` lo convierte al formato de
-  Claude que Ragnar espera.
-* No hay `--session-id`: Codex asigna el `thread_id` y lo informa en
-  `thread.started`. Se guarda la correspondencia session_id(Ragnar) ->
-  thread_id en `codex-estado.json`; los turnos siguientes usan `exec resume`
-  siempre que el archivo de la conversacion siga existiendo.
-* No hay `--append-system-prompt`: las instrucciones de Ragnar se anteponen al
-  prompt del primer turno de cada conversacion (despues viven en el hilo).
-* Configuracion aislada: el bridge NUNCA escribe en el `config.toml` de Codex.
-  Todo lo que necesita (sandbox, modelo y razonamiento, MCP de tickets) va por overrides `-c`
-  de ESE turno. La carpeta de Codex es `codex_home` (por defecto `~/.codex`,
-  con tu sesion ya iniciada); solo se exporta CODEX_HOME si la moviste.
-* Sin secretos en el comando: el token de tickets de cada turno viaja en el
-  ENTORNO del proceso y `mcp_servers.<n>.env_vars` lo reenvia al puente
-  `mcp_proxy` (los argumentos de un proceso los ve cualquiera con `ps`).
-  Ademas se excluye del entorno de las herramientas de shell del modelo.
-* En `exec` no hay nadie que apruebe comandos: cada turno va con
-  `approval_policy="never"`, asi que lo que el sandbox no permite falla (el
-  modelo ve el error) y nada se queda esperando una aprobacion. Por eso el
-  default es `read-only` (el agente lee y conversa) y `codex_sandbox` deja
-  subirlo. `--dangerously-bypass-approvals-and-sandbox` va SOLO con
-  `codex_sandbox="danger-full-access"` (RAG-196: antes iba siempre y anulaba
-  el sandbox). No hay tarjeta "Autorizar".
-"""
+* Un turno es `codex exec --json` (o `exec resume <thread>`); `TraductorCodex`
+  convierte su JSONL (`thread.started`/`item.*`/`turn.completed`) al de Claude.
+* Codex asigna el `thread_id`: se guarda session_id -> thread_id en
+  `codex-estado.json` y se reanuda mientras el hilo exista en disco.
+* Sin `--append-system-prompt`: las instrucciones van antepuestas al primer prompt.
+* Nunca escribe el `config.toml`: sandbox, modelo y MCP de tickets van por `-c`.
+* El token de tickets viaja en el entorno (no en argv), llega a `mcp_proxy` por
+  `env_vars` y se excluye del entorno de las herramientas de shell del modelo.
+* `exec` no tiene quien apruebe (`approval_policy="never"`): el sandbox por defecto
+  es `read-only` y el bypass solo va con `codex_sandbox="danger-full-access"`."""
 
 import json
 import logging

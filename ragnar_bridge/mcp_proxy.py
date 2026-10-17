@@ -1,25 +1,11 @@
-"""Puente MCP stdio -> HTTP para las tools de tickets de Ragnar en `agy`.
+"""Puente MCP stdio -> HTTP para las tools de tickets de Ragnar en agy y Codex.
 
-Claude Code acepta un archivo de MCP por invocacion (`--mcp-config`), asi que
-cada turno lleva su propio token. `agy` no: sus servidores MCP viven en UN
-archivo global (`~/.gemini/config/mcp_config.json`) y sus cabeceras HTTP no
-expanden variables de entorno (probado: manda el literal `${VAR}`). Con un
-token fijo ahi, todo el grupo actuaria como una sola persona.
-
-Salida: se registra UNA vez este proceso como servidor stdio, y el bridge le
-pasa el token de cada turno por el ENTORNO del propio `agy` (un servidor stdio
-hereda el entorno de quien lo lanza; tambien probado). Asi el token nunca se
-escribe en disco y dos personas hablando a la vez no se pisan.
-
-Solo libreria estandar: corre con el mismo Python que el bridge. Variables:
-
-  RAGNAR_TICKETS_URL     https://<panel>/api/v1/mcp
-  RAGNAR_TICKETS_TOKEN   token de turno del usuario que escribio
-  RAGNAR_TICKETS_AGENT   nombre que queda en el historial (opcional)
-
-Sin URL o sin token no hay tools: el servidor arranca igual (agy espera el
-saludo MCP y, si nunca llega, se queda colgado) pero anuncia una lista vacia.
-"""
+Se registra una sola vez como servidor stdio y toma el token de cada turno del
+entorno que hereda del CLI, asi el token nunca se escribe en disco ni se mezcla
+entre personas. Solo libreria estandar. Variables:
+  RAGNAR_TICKETS_URL, RAGNAR_TICKETS_TOKEN, RAGNAR_TICKETS_AGENT (opcional).
+Sin URL o sin token arranca igual y anuncia una lista vacia: el CLI espera el
+saludo MCP y sin el se cuelga."""
 
 import json
 import os

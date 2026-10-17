@@ -1,3 +1,6 @@
+"""Frame `bootstrap`: preview sin escribir, apply con confirmacion y respaldo, y
+rechazo de rutas fuera de la lista o de contenido con sha alterado."""
+
 import hashlib
 
 import pytest

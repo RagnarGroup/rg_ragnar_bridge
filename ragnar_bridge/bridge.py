@@ -1,5 +1,9 @@
-"""Conexion con Ragnar y ejecucion de turnos. Protocolo: ver el docstring de
-services/bridge_hub.py en ragnar_group_back (es la fuente de verdad)."""
+"""Conexion WebSocket con Ragnar (auth, reconexion con backoff) y atencion de sus
+frames: run, cancel, probe, bootstrap y files.
+
+Cada turno corre en su propio grupo de procesos para poder matarlo entero al
+cancelar, al vencer el tope de tiempo o al perder la conexion. El protocolo lo
+define services/bridge_hub.py en ragnar_group_back."""
 
 import asyncio
 import json

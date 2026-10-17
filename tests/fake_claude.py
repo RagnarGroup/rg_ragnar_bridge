@@ -1,16 +1,9 @@
-"""Doble del CLI de Claude para las pruebas: emite stream-json y sale.
+"""Doble del CLI de Claude para las pruebas: emite su argv y un `result` en stream-json.
 
-Emite primero un evento con su propio argv (para que el test compruebe que
-flags recibio) y despues un `result`. Si el prompt contiene SLEEP se queda
-colgado, para probar cancelacion y corte por desconexion. Con FAIL sale con
-codigo 3 y algo en stderr.
-
-Con HIJO deja un proceso hijo vivo (en su mismo grupo, como un servidor MCP o
-un shell en background) y escribe su PID en $FAKE_CLAUDE_PID_FILE; con
-HIJO_STDOUT ese hijo ademas hereda stdout/stderr y los mantiene abiertos;
-HIJO_TERCO es lo mismo pero el hijo ignora SIGTERM. Con GRANDE emite una linea
-de ~300 KB antes del `result`.
-"""
+Guiones segun el prompt: SLEEP se cuelga; FAIL sale con codigo 3 y stderr;
+HIJO deja un hijo vivo en su grupo (PID en $FAKE_CLAUDE_PID_FILE), HIJO_STDOUT
+ademas le hereda stdout/stderr y HIJO_TERCO ignora SIGTERM; GRANDE emite una
+linea de ~300 KB antes del `result`."""
 
 import json
 import os

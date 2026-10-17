@@ -1,16 +1,9 @@
-"""Doble de `codex` para las pruebas. Emite el JSONL de `codex exec --json`
-(codex-cli 0.157.0: thread.started / turn.started / item.* / turn.completed) y
-guarda argv y entorno relevante en $CODEX_HOME/argvs.jsonl para que el test
-compruebe que flags y variables recibio.
+"""Doble de `codex` para las pruebas: emite el JSONL de `codex exec --json` y guarda
+argv y entorno relevante en $CODEX_HOME/argvs.jsonl.
 
 Guiones segun el prompt (ultimo argumento):
-  TOOL     -> ejecuta un comando (item.started + item.completed)
-  FILE     -> cambia un archivo
-  MCP      -> llama a una tool MCP
-  FAILED   -> turn.failed y salida con codigo 1
-  CRASH    -> sale con codigo 3 sin emitir turn.completed
-  SLEEP    -> se cuelga
-"""
+  TOOL -> ejecuta un comando; FILE -> cambia un archivo; MCP -> llama a una tool MCP;
+  FAILED -> turn.failed y codigo 1; CRASH -> codigo 3 sin turn.completed; SLEEP -> se cuelga."""
 
 import json
 import os

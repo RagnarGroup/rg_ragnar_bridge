@@ -1,3 +1,6 @@
+"""Ciclo basico de un turno con Claude: auth, reenvio de stream-json, sesiones,
+cancelacion, errores fatales, concesion de permisos y URL del MCP de tickets."""
+
 import asyncio
 import json
 import sys

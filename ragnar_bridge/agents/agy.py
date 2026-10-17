@@ -1,38 +1,15 @@
-"""Antigravity CLI (`agy`, github.com/google-antigravity/antigravity-cli).
+"""Adaptador de Antigravity CLI (`agy`).
 
-Diferencias con Claude Code que el adaptador absorbe (verificado contra agy
-1.1.27, ver tests/test_agy.py para las formas reales de los eventos):
-
-* Su stream-json es otro (`init`/`step_update`/`result`): `TraductorAgy` lo
-  convierte al formato de Claude que Ragnar espera.
-* No hay `--session-id`: agy asigna el id de conversacion y lo informa en
-  `init`. Se guarda la correspondencia session_id(Ragnar) -> conversation_id en
+* `TraductorAgy` convierte su stream-json (`init`/`step_update`/`result`) al de Claude.
+* agy asigna el id de conversacion: se guarda session_id -> conversation_id en
   `agy-estado.json` y los turnos siguientes usan `--conversation`.
-* No hay `--append-system-prompt`: las instrucciones de Ragnar se anteponen al
-  prompt del primer turno de cada conversacion (despues viven en el hilo).
-* Tickets de Ragnar (MCP): agy tiene UN archivo global de servidores MCP y sus
-  cabeceras no expanden variables de entorno, asi que un token por turno no
-  cabe ahi. Se registra una sola vez `ragnar-tickets` como servidor stdio
-  (`mcp_proxy`) y el token de cada turno viaja en el ENTORNO del agy de ese
-  turno, que el servidor hereda. Ver `mcp_proxy.py`.
-  Limite conocido (RAG-208): a diferencia de Codex
-  (`shell_environment_policy.exclude`), agy no tiene forma de quitar variables
-  del entorno que heredan las herramientas de shell del modelo, y el servidor
-  stdio solo recibe el token heredandolo de ese mismo entorno (`agy mcp add
-  --env` es estatico y global, no sirve para un token por turno). Asi que el
-  modelo PUEDE leer `RAGNAR_TICKETS_TOKEN` desde un shell. Se acepta porque es
-  el token efimero y estricto de ESE turno, el mismo que el modelo ya usa via
-  MCP. Pasarlo por un archivo que el proxy borre al leerlo dependeria de que
-  agy lance el servidor una sola vez y antes de cualquier herramienta, cosa no
-  verificada: si fallara, el turno se quedaria sin tickets.
-* En modo headless una herramienta que pide permiso se DENIEGA sola (y
-  `permissions.allow` de su settings.json se ignora en headless, issue #548 de
-  antigravity-cli). La salida es `--dangerously-skip-permissions`, que aprueba
-  TODO. Por eso el bridge no lo pasa de entrada: deja que agy deniegue, le
-  cuenta a Ragnar que hace falta un permiso (marcador [[PERMISO]], el mismo
-  flujo de la tarjeta "Autorizar" que Claude) y, solo si el humano aprueba,
-  relanza esa conversacion con el flag. Ver `Config.agy_permisos`.
-"""
+* Sin `--append-system-prompt`: las instrucciones van antepuestas al primer prompt.
+* Su config MCP es global y no expande variables: `ragnar-tickets` se registra una
+  vez como servidor stdio (`mcp_proxy`) y el token de cada turno viaja en el entorno
+  del agy, que el modelo puede leer desde un shell (es el token efimero del turno).
+* En headless una herramienta que pide permiso se deniega sola y `permissions.allow`
+  se ignora: el turno se relanza con `--dangerously-skip-permissions` solo si el
+  humano aprueba en Ragnar (marcador [[PERMISO]]), segun `Config.agy_permisos`."""
 
 import json
 import logging
