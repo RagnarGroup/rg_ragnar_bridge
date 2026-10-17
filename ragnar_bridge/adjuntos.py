@@ -23,8 +23,6 @@ def carpeta(estado_dir: Path) -> Path:
 
 
 def guardar(estado_dir: Path, turno: Turno) -> Turno:
-    """Escribe los adjuntos de `turno` y devuelve el turno con sus rutas
-    sumadas al mensaje. Sin adjuntos devuelve el mismo turno."""
     if not turno.adjuntos:
         return turno
     raiz = carpeta(estado_dir)

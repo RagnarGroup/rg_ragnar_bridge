@@ -29,7 +29,6 @@ def _cfg(tmp_path, ragnar, **kw) -> Config:
 
 @pytest.fixture
 async def arrancar(tmp_path, ragnar, monkeypatch):
-    """Fabrica: levanta un bridge agy con la config pedida y lo apaga al final."""
     (tmp_path / "work").mkdir()
     (tmp_path / "agy").mkdir()
     monkeypatch.setenv("AGY_FAKE_DIR", str(tmp_path / "agy"))
@@ -49,7 +48,6 @@ async def arrancar(tmp_path, ragnar, monkeypatch):
 def _argvs(tmp_path):
     lineas = (tmp_path / "agy" / "argvs.jsonl").read_text(encoding="utf-8").splitlines()
     argvs = [json.loads(x) for x in lineas]
-    # El bridge corre `agy --version` al conectar: no es un turno.
     return [a for a in argvs if a != ["--version"]]
 
 
@@ -81,8 +79,6 @@ async def test_traduce_los_eventos_de_agy_al_formato_de_claude(arrancar, ragnar)
     assert _texto(eventos) == "Hola mundo\n"
     resultado = eventos[-1]
     assert resultado["type"] == "result" and resultado["is_error"] is False
-    # El uso es la SUMA de los pasos de este turno (100/5/2), no el
-    # `result.usage` de agy (9999), que es acumulado de toda la conversacion.
     assert resultado["usage"]["input_tokens"] == 100
     assert resultado["usage"]["output_tokens"] == 5
     assert resultado["usage"]["cache_read_input_tokens"] == 2
@@ -100,7 +96,6 @@ async def test_primer_turno_abre_conversacion_con_las_instrucciones_de_ragnar(ar
     assert argv[argv.index("--model") + 1] == "gemini-3.7-flash-high"
     assert argv[argv.index("--print-timeout") + 1] == "30m"
     assert "--dangerously-skip-permissions" not in argv
-    # agy no tiene --append-system-prompt: las instrucciones van en el prompt.
     assert _prompt(argv).startswith("PROTOCOLO") and _prompt(argv).endswith("CON CONTEXTO")
 
 
@@ -114,10 +109,8 @@ async def test_segundo_turno_retoma_la_conversacion_de_agy(arrancar, ragnar, tmp
 
     primero, segundo = _argvs(tmp_path)
     assert "--conversation" in segundo
-    # El id lo asigno agy en el primer turno; el bridge lo recordo.
     estado = json.loads((tmp_path / "agy-estado.json").read_text())
     assert segundo[segundo.index("--conversation") + 1] == estado["sesiones"][tid]["conversation_id"]
-    # Retomando, agy ya recuerda: va solo el mensaje nuevo, sin instrucciones.
     assert _prompt(segundo) == "dos"
 
 
@@ -141,8 +134,6 @@ async def test_el_prompt_va_pegado_al_flag_p(arrancar, ragnar, tmp_path):
     raro = "--help\nsegunda linea"
     await ragnar.enviar(run(tid, prompt=raro, fallback=raro))
     await ragnar.hasta_done(tid)
-    # Un solo argumento `-p=<prompt>`: ni un prompt que empieza con "-" ni uno
-    # con saltos de linea se confunden con un flag de agy.
     argv = _argvs(tmp_path)[0]
     assert sum(a.startswith("-p=") for a in argv) == 1 and "-p" not in argv
     assert _prompt(argv).endswith(raro)
@@ -164,7 +155,6 @@ async def test_herramienta_denegada_pide_permiso_con_el_marcador_de_ragnar(arran
     tool_result = next(e for e in eventos if e["type"] == "user")["message"]["content"][0]
     assert tool_result["is_error"] is True and tool_result["tool_use_id"] == tool_use["id"]
 
-    # Ragnar solo toma el marcador si es lo ULTIMO del texto del turno.
     texto = _texto(eventos)
     assert texto.rstrip().endswith("[[/PERMISO]]")
     marcador = json.loads(texto.split("[[PERMISO]]")[1].split("[[/PERMISO]]")[0])
@@ -186,8 +176,6 @@ async def test_aprobar_relanza_la_conversacion_con_las_herramientas_aprobadas(ar
     assert resultado_tool["is_error"] is False and "hola-bridge" in resultado_tool["content"]
     assert "[[PERMISO]]" not in _texto(eventos)
 
-    # El permiso es de la conversacion: los turnos siguientes siguen aprobados
-    # sin volver a preguntar.
     await ragnar.enviar(run(tid, prompt="otra vez TOOL"))
     await ragnar.hasta_done(tid)
     assert "--dangerously-skip-permissions" in _argvs(tmp_path)[2]
@@ -206,8 +194,6 @@ async def test_el_permiso_de_una_conversacion_no_pasa_a_otra(arrancar, ragnar, t
 
 @pytest.mark.parametrize("conceder", ["Bash(*)", "Bash", "agy:permisos ", "AGY:PERMISOS", "WebFetch"])
 async def test_solo_la_etiqueta_exacta_activa_el_modo_sin_permisos(arrancar, ragnar, tmp_path, conceder):
-    """RAG-200: antes CUALQUIER `conceder` no vacio dejaba la conversacion en
-    --dangerously-skip-permissions para siempre."""
     await arrancar()
     tid = str(uuid.uuid4())
     await ragnar.enviar(run(tid, prompt="TOOL", conceder=conceder))
@@ -264,9 +250,6 @@ async def test_cancel_corta_el_proceso(arrancar, ragnar):
     assert fin["type"] == "done" and fin["exit_code"] != 0
 
 
-# ---- config y doctor
-
-
 def test_config_rechaza_agente_y_permisos_invalidos(tmp_path):
     ruta = tmp_path / "config.json"
     base = {"url": "wss://x/api/v1/bridge/ws", "token": "t"}
@@ -281,7 +264,6 @@ def test_config_rechaza_agente_y_permisos_invalidos(tmp_path):
         cargar(ruta)
     ruta.write_text(json.dumps({**base, "agents": ["agy"], "agy_cmd": "agy"}))
     assert cargar(ruta).agy_cmd == ["agy"]
-    # Config de la 0.2 (un solo agente) y sin ninguno (detecta todos).
     ruta.write_text(json.dumps({**base, "agent": "agy"}))
     assert cargar(ruta).agentes_pedidos() == ["agy"]
     ruta.write_text(json.dumps(base))
@@ -298,9 +280,6 @@ async def test_probar_conexion_con_token_invalido_es_error_fatal(ragnar):
     cfg = Config(url=ragnar.url, token="ragbrg_otro", agents=["agy"], agy_cmd=[sys.executable, FAKE_AGY])
     with pytest.raises(ErrorFatal):
         await probar_conexion(cfg)
-
-
-# ---- cuota (/usage)
 
 
 def _adaptador(tmp_path, monkeypatch):
@@ -325,7 +304,6 @@ def test_cuota_de_agy_se_normaliza_a_bloques(tmp_path, monkeypatch):
 
 
 def test_un_agy_anterior_a_1_1_11_ni_se_consulta(tmp_path, monkeypatch):
-    # Ahi `-p "/usage"` iria al modelo como un prompt (y gastaria cuota).
     adaptador = _adaptador(tmp_path, monkeypatch)
     assert adaptador.cuota("1.1.10") is None and adaptador.cuota("desconocida") is None
     assert not (tmp_path / "agy" / "usage-llamado").exists()
@@ -334,9 +312,7 @@ def test_un_agy_anterior_a_1_1_11_ni_se_consulta(tmp_path, monkeypatch):
 async def test_la_cuota_llega_en_un_frame_agents_despues_del_auth(arrancar, ragnar, monkeypatch):
     monkeypatch.setenv("FAKE_AGY_VERSION", "fake-agy 1.2.11")
     await arrancar()
-    # El auth no la lleva (no demora la conexion)...
     assert "quota" not in ragnar.auth_frame["agents"][0]
-    # ...llega enseguida en un frame `agents`.
     while True:
         msg = await asyncio.wait_for(ragnar.recibidos.get(), 15)
         if msg["type"] == "agents":

@@ -52,20 +52,15 @@ log = logging.getLogger("ragnar_bridge")
 
 _SEPARADOR = "\n\n---\n\n"
 
-# Nombre con el que se declara el puente de tickets en los overrides de cada
-# turno (nada se registra en disco, asi que no pisa un servidor tuyo).
 NOMBRE_MCP = "ragnar-tickets"
 _VARIABLES_TICKETS = ("RAGNAR_TICKETS_URL", "RAGNAR_TICKETS_TOKEN", "RAGNAR_TICKETS_AGENT")
 
 
 def _toml(valor) -> str:
-    """Valor de un `-c clave=valor`: Codex lo parsea como TOML y JSON es un
-    subconjunto valido para cadenas y listas de cadenas."""
     return json.dumps(valor, ensure_ascii=False)
 
 
 def hilo_existe(cfg: Config, thread_id: str) -> bool:
-    """Codex guarda cada hilo como <codex_home>/sessions/AAAA/MM/DD/rollout-<fecha>-<id>.jsonl."""
     if not _PATRON_UUID.match(thread_id):
         return False
     sesiones = Path(cfg.codex_home_abs) / "sessions"
@@ -83,15 +78,12 @@ class CodexAdaptador(Adaptador):
         env = os.environ.copy()
         for k in _VARIABLES_TICKETS:
             env.pop(k, None)
-        # Solo se fija CODEX_HOME si la moviste de sitio.
         por_defecto = os.path.abspath(os.path.expanduser("~/.codex"))
         if self.cfg.codex_home_abs != por_defecto:
             env["CODEX_HOME"] = self.cfg.codex_home_abs
         return env
 
     def sesion_iniciada(self) -> Optional[bool]:
-        """`codex login status` sale con 0 si hay sesion y con otro codigo si no;
-        no gasta cuota. Un timeout o un fallo al lanzarlo no prueba nada."""
         try:
             salida = subprocess.run(
                 [*self.cmd, "login", "status"],
@@ -105,8 +97,6 @@ class CodexAdaptador(Adaptador):
         return salida.returncode == 0
 
     def cuota(self, version: str) -> Optional[dict]:
-        """Limites de la suscripcion por `codex app-server` (JSON-RPC por stdio,
-        `account/rateLimits/read`): no lanza ningun turno ni gasta cuota."""
         try:
             respuesta = self._rpc(
                 [
@@ -122,7 +112,6 @@ class CodexAdaptador(Adaptador):
                 limites = {"codex": resultado["rateLimits"]}
             bloques = []
             for id_limite, limite in limites.items():
-                # El limite principal no lleva grupo; los extra (otros modelos) si.
                 grupo = None if id_limite == "codex" else str(limite.get("limitName") or id_limite)[:60]
                 for ventana_ in (limite.get("primary"), limite.get("secondary")):
                     if not isinstance(ventana_, dict):
@@ -143,9 +132,6 @@ class CodexAdaptador(Adaptador):
         return {"plan": str(plan)[:30] if plan else None, "bloques": bloques} if bloques else None
 
     def _rpc(self, mensajes: List[dict], esperar: int, timeout: float = 25) -> Optional[dict]:
-        """Lanza `codex app-server`, manda los mensajes JSON-RPC y devuelve la
-        respuesta con id `esperar`. Un hilo lee el stdout: `select` no sirve con
-        pipes en Windows."""
         kwargs = dict(
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -155,10 +141,6 @@ class CodexAdaptador(Adaptador):
             env=self._entorno_base(),
         )
         if os.name == "posix":
-            # `app-server` puede dejar hijos huerfanos que ignoran el kill de
-            # su propio PID (conocido en codex-cli, p.ej. openai/codex#15379
-            # y #47735): se lanza en su propia sesion para poder matar el
-            # grupo entero en el finally, no solo el proceso.
             kwargs["start_new_session"] = True
         proceso = subprocess.Popen([*self.cmd, "app-server"], **kwargs)
         lineas: "queue.Queue[Optional[str]]" = queue.Queue()
@@ -205,7 +187,6 @@ class CodexAdaptador(Adaptador):
                 pass
         proceso.wait()
 
-    # ---- estado propio (session_id de Ragnar -> hilo de Codex)
 
     @property
     def _ruta_estado(self) -> Path:
@@ -234,20 +215,12 @@ class CodexAdaptador(Adaptador):
         sesiones.setdefault(session_id, {}).update(campos)
         self._guardar(sesiones)
 
-    # ---- comando
 
     def _overrides(self, turno: Turno) -> List[str]:
-        """Pares `-c clave=valor` de ESTE turno: nada de esto toca tu config.toml."""
         cfg = self.cfg
         pares = [
             ("sandbox_mode", _toml(cfg.codex_sandbox)),
-            # En `exec` nadie puede contestar una aprobacion: con "never" lo
-            # que el sandbox no permite FALLA y el modelo recibe el error, en
-            # vez de quedarse esperando a un humano que no existe. Se fija
-            # explicito para no depender del default de cada version de Codex
-            # ni de lo que diga tu config.toml.
             ("approval_policy", _toml("never")),
-            # Que el modelo no vea en sus comandos de shell las variables del puente.
             ("shell_environment_policy.exclude", _toml(["RAGNAR_*"])),
         ]
         if cfg.codex_sandbox == "workspace-write" and cfg.add_dirs:
@@ -294,12 +267,8 @@ class CodexAdaptador(Adaptador):
         if reanudar:
             argv.append("resume")
         if self.cfg.codex_sandbox == "danger-full-access":
-            # Solo si el dueno del servidor lo pidio a proposito: sin sandbox
-            # y sin aprobaciones, el modelo corre CUALQUIER comando como el
-            # usuario del bridge (RAG-196).
             argv.append("--dangerously-bypass-approvals-and-sandbox")
         argv += ["--json", "--skip-git-repo-check", *self._overrides(turno)]
-        # `--` para que un prompt que empieza con "-" no se lea como un flag.
         argv += ["--", *([hilo] if reanudar else []), texto]
 
         env = self._entorno_base()
@@ -311,17 +280,6 @@ class CodexAdaptador(Adaptador):
 
 
 class TraductorCodex(Traductor):
-    """Convierte el JSONL de `codex exec --json` al stream-json de Claude:
-
-      thread.started                    -> (guarda thread_id)
-      item agent_message                -> stream_event / content_block_delta / text_delta
-      item command_execution            -> assistant / tool_use (Bash), user / tool_result
-      item file_change                  -> assistant / tool_use (apply_patch), user / tool_result
-      item mcp_tool_call                -> assistant / tool_use (mcp__<server>__<tool>), user / tool_result
-      item web_search                   -> assistant / tool_use (WebSearch), user / tool_result
-      turn.completed | turn.failed      -> result
-    """
-
     def __init__(self, adaptador: CodexAdaptador, turno: Turno):
         self._ad = adaptador
         self._turno = turno
@@ -358,8 +316,6 @@ class TraductorCodex(Traductor):
         if tipo == "turn.failed":
             mensaje = (linea.get("error") or {}).get("message")
             return self._resultado(str(mensaje or "Codex termino con error."), {})
-        # `error` (avisos de reconexion, de configuracion) no es el final del
-        # turno: el final lo dicen turn.completed / turn.failed.
         return []
 
     def _item(self, item: dict, terminado: bool) -> List[dict]:
@@ -368,7 +324,6 @@ class TraductorCodex(Traductor):
             texto = item.get("text") or ""
             if not terminado or not texto:
                 return []
-            # Codex entrega cada mensaje entero: se separan para que no se peguen.
             prefijo = "\n\n" if self._hubo_texto else ""
             self._hubo_texto = True
             return [self._texto(prefijo + texto)]

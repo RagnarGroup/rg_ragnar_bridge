@@ -47,13 +47,7 @@ async def arrancar(tmp_path, ragnar):
     await asyncio.gather(*tareas, return_exceptions=True)
 
 
-# ---- RAG-201: errores y tope de tiempo
-
-
 async def test_una_excepcion_al_preparar_manda_error_sin_el_texto(arrancar, ragnar, monkeypatch):
-    """Un TypeError (no OSError) en `preparar` mataba la task sin `error` ni
-    `done`: la tarea quedaba "ejecutando" para siempre en Ragnar."""
-
     def roto(self, turno, username):
         raise TypeError("ragagt_secreto no deberia salir")
 
@@ -67,8 +61,6 @@ async def test_una_excepcion_al_preparar_manda_error_sin_el_texto(arrancar, ragn
 
 
 async def test_estado_de_hermes_corrupto_no_cuelga_el_turno(tmp_path, ragnar, monkeypatch):
-    """El caso del ticket: `hermes_session_id` que no es string en el JSON de
-    estado rompe el spawn con TypeError."""
     (tmp_path / "work").mkdir()
     monkeypatch.setenv("FAKE_HERMES_ARGV_LOG", str(tmp_path / "argvs.jsonl"))
     tid = str(uuid.uuid4())
@@ -98,7 +90,6 @@ async def test_tope_por_turno_corta_el_cli_y_avisa(arrancar, ragnar):
     _, fin = await ragnar.hasta_done(tid, timeout=20)
     assert fin["type"] == "error" and "timeout_turno" in fin["message"]
 
-    # El lugar del turno se libera: la conversacion acepta otro.
     await ragnar.enviar(run(tid, prompt="hola"))
     _, fin = await ragnar.hasta_done(tid)
     assert fin["type"] == "done" and fin["exit_code"] == 0
@@ -115,14 +106,10 @@ def test_config_valida_timeout_turno(tmp_path):
             cargar(ruta)
 
 
-# ---- RAG-202: procesos huerfanos y cancelaciones
-
 posix = pytest.mark.skipif(os.name != "posix", reason="grupos de procesos: POSIX-only")
 
 
 async def _murio(pid: int, espera: float = 8.0) -> bool:
-    """¿Termino `pid`? Un zombie (ya muerto, esperando que init lo recoja)
-    cuenta como muerto."""
     limite = time.monotonic() + espera
     while time.monotonic() < limite:
         try:
@@ -153,7 +140,6 @@ def pid_file(tmp_path, monkeypatch):
     ruta = tmp_path / "hijo.pid"
     monkeypatch.setenv("FAKE_CLAUDE_PID_FILE", str(ruta))
     yield ruta
-    # En Windows (sin grupos) el hijo puede sobrevivir: que no ensucie la maquina.
     if ruta.exists() and os.name != "posix":
         try:
             os.kill(int(ruta.read_text().strip()), signal.SIGTERM)
@@ -163,8 +149,6 @@ def pid_file(tmp_path, monkeypatch):
 
 @posix
 async def test_turno_normal_no_deja_procesos_huerfanos(arrancar, ragnar, pid_file):
-    """Un turno que termina BIEN tambien limpia su grupo: antes sobrevivian los
-    nietos (servidores MCP, shells en background)."""
     await arrancar()
     tid = str(uuid.uuid4())
     await ragnar.enviar(run(tid, prompt="HIJO"))
@@ -214,8 +198,6 @@ async def test_cancel_mata_al_grupo_del_turno(arrancar, ragnar, pid_file):
 
 @posix
 async def test_matar_proceso_no_sale_temprano_si_el_lider_ya_murio(tmp_path, pid_file):
-    """El lider ya termino pero su nieto sigue en el grupo: un `cancel` tiene
-    que limpiarlo igual (antes salia en cuanto veia el returncode)."""
     from ragnar_bridge.bridge import Bridge
 
     codigo = (
@@ -235,8 +217,6 @@ async def test_matar_proceso_no_sale_temprano_si_el_lider_ya_murio(tmp_path, pid
 
 
 async def test_cancel_que_llega_antes_de_que_arranque_el_cli_se_aplica(arrancar, ragnar, monkeypatch):
-    """El `cancel` llega mientras el CLI todavia no esta registrado: antes se
-    ignoraba y el turno corria entero."""
     import ragnar_bridge.bridge as modulo
 
     original = modulo.asyncio.create_subprocess_exec
@@ -251,7 +231,6 @@ async def test_cancel_que_llega_antes_de_que_arranque_el_cli_se_aplica(arrancar,
     await ragnar.enviar(run(tid, prompt="SLEEP"))
     await asyncio.sleep(0.2)
     await ragnar.enviar({"type": "cancel", "task_id": tid})
-    # SLEEP duerme 60 s: si el cancel se perdiera, esto no llega a tiempo.
     _, fin = await ragnar.hasta_done(tid, timeout=20)
     assert fin["type"] == "done" and fin["exit_code"] != 0
 
@@ -271,9 +250,6 @@ async def test_sigterm_al_bridge_corta_los_turnos_y_sus_grupos(tmp_path, ragnar,
     assert await _murio(pid)
 
 
-# ---- RAG-208: reconexion, memoria y token
-
-
 async def _servidor(manejador):
     from websockets.asyncio.server import serve
 
@@ -282,8 +258,6 @@ async def _servidor(manejador):
 
 
 async def _esperas_de_reconexion(monkeypatch, url, cuantas=4):
-    """Corre `ejecutar` hasta `cuantas` reconexiones y devuelve cuanto pidio
-    esperar antes de cada una (sin jitter y sin esperarlo de verdad)."""
     import ragnar_bridge.bridge as modulo
 
     esperas = []
@@ -318,8 +292,6 @@ async def test_backoff_se_reinicia_despues_de_un_welcome_valido(monkeypatch):
     async def saluda_y_cierra(ws):
         await ws.recv()
         await ws.send(json.dumps({"type": "welcome", "username": "gus", "nombre": "t"}))
-        # Un instante antes de cerrar: cerrar justo despues del welcome era
-        # flaky en Linux (a veces el cliente veia el cierre sin el welcome).
         await asyncio.sleep(0.3)
         await ws.close()
 
@@ -409,7 +381,7 @@ def test_guardar_crea_el_archivo_con_600_aun_con_umask_abierta(tmp_path):
 
     viejo = os.umask(0o022)
     try:
-        (tmp_path / "config.tmp").write_text("{}")  # un .tmp viejo, legible por todos
+        (tmp_path / "config.tmp").write_text("{}")
         os.chmod(tmp_path / "config.tmp", 0o644)
         ruta = guardar(Config(url="wss://x", token="ragbrg_secreto"), tmp_path / "config.json")
     finally:

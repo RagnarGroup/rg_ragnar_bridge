@@ -31,8 +31,6 @@ from urllib.parse import urljoin, urlsplit
 
 VERSION_PROTOCOLO = "2025-06-18"
 TIMEOUT = 120
-# Tope de una respuesta de Ragnar: mas que esto no es una respuesta de tickets
-# sana, y leerla entera sin limite podia comerse la RAM (RAG-208).
 TOPE_RESPUESTA = 16 * 1024 * 1024
 
 
@@ -48,12 +46,11 @@ class Puente:
         self.sesion: Optional[str] = None
         self.protocolo: Optional[str] = None
 
-    # ---- sin token: un servidor MCP valido y vacio
 
     def _vacio(self, msg: dict) -> Optional[dict]:
         id_ = msg.get("id")
         if id_ is None:
-            return None  # notificacion
+            return None
         metodo = msg.get("method")
         if metodo == "initialize":
             pedido = (msg.get("params") or {}).get("protocolVersion") or VERSION_PROTOCOLO
@@ -72,7 +69,6 @@ class Puente:
             return {"jsonrpc": "2.0", "id": id_, "result": {}}
         return {"jsonrpc": "2.0", "id": id_, "error": {"code": -32601, "message": "Sin acceso a tickets en este turno."}}
 
-    # ---- con token: se reenvia tal cual a Ragnar
 
     def _cabeceras(self) -> dict:
         cab = {
@@ -101,9 +97,6 @@ class Puente:
             yield "\n".join(datos)
 
     def _post(self, msg: dict):
-        """POST con hasta 3 redirecciones 307/308 del MISMO servidor (Starlette
-        redirige /api/v1/mcp a /api/v1/mcp/): urllib no las sigue en un POST, y
-        una hacia OTRO host no se sigue jamas, para no mandarle el token."""
         cuerpo = json.dumps(msg).encode("utf-8")
         for _ in range(4):
             peticion = urllib.request.Request(self.url, data=cuerpo, headers=self._cabeceras(), method="POST")
@@ -194,7 +187,6 @@ def main() -> None:
         os.environ.get("RAGNAR_TICKETS_TOKEN") or None,
         os.environ.get("RAGNAR_TICKETS_AGENT") or "agy",
     )
-    # El protocolo es UTF-8 con independencia de la consola (en Windows seria cp1252).
     try:
         sys.stdin.reconfigure(encoding="utf-8")
         sys.stdout.reconfigure(encoding="utf-8")

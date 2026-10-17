@@ -24,7 +24,6 @@ class Comando:
 
 
 def ventana(minutos: int) -> str:
-    """Nombre corto de una ventana de cuota: 300 -> "5h", 10080 -> "semana"."""
     if minutos == 10080:
         return "semana"
     if minutos % 60 == 0:
@@ -33,9 +32,6 @@ def ventana(minutos: int) -> str:
 
 
 def bloque_de_cuota(grupo: Optional[str], ventana_: str, usado: float, resetea: Optional[datetime]) -> dict:
-    """Un limite de la suscripcion en el formato que Ragnar espera de TODO
-    agente: `usado` es un porcentaje entero (0-100) y `resetea` un instante ISO
-    en UTC (o None si el CLI no lo dice)."""
     return {
         "grupo": grupo,
         "ventana": ventana_,
@@ -45,15 +41,10 @@ def bloque_de_cuota(grupo: Optional[str], ventana_: str, usado: float, resetea: 
 
 
 class Traductor:
-    """Estado de UN turno: convierte lo que emite el CLI en eventos para
-    Ragnar. Por defecto no traduce nada (el CLI ya habla el formato de Ragnar)."""
-
     def evento(self, linea: dict) -> List[dict]:
         return [linea]
 
     def fin(self, codigo: Optional[int], stderr: str) -> List[dict]:
-        """Se llama una vez, cuando el proceso ya termino. Devuelve eventos
-        finales que faltaban (y es el lugar para persistir estado del turno)."""
         return []
 
 
@@ -81,16 +72,9 @@ class Adaptador:
         return shutil.which(self.cmd[0]) is not None
 
     def sesion_iniciada(self) -> Optional[bool]:
-        """¿Tiene la sesion iniciada el usuario que corre el bridge? True/False,
-        o None si no se pudo saber (el CLI no lo dice, timeout, sin red). Se usa
-        solo para AVISAR en la app: nunca impide intentar un turno."""
         return None
 
     def cuota(self, version: str) -> Optional[dict]:
-        """Cuota real de la suscripcion: `{"plan": str|None, "bloques": [...]}`
-        (ver `bloque_de_cuota`), o None si el CLI no la expone o no se pudo
-        leer. NUNCA gasta cuota ni lanza: es un dato de cortesia que viaja con
-        el sondeo, y un fallo aca no debe tumbarlo."""
         return None
 
     def preparar(self, turno: Turno, username: str) -> Comando:

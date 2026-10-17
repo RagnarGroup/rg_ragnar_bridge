@@ -20,7 +20,6 @@ def _cfg(tmp_path, ragnar, **kw) -> Config:
         token=TOKEN,
         claude_cmd=[sys.executable, FAKE],
         agy_cmd=[sys.executable, FAKE_AGY],
-        # Un Codex que si estuviera instalado en la maquina de pruebas no debe colarse.
         codex_cmd=["/no/existe/codex"],
         agy_dir=str(tmp_path / "agy"),
         config_dir=str(tmp_path / "claude"),
@@ -58,7 +57,6 @@ async def test_detecta_los_dos_agentes_y_los_anuncia(arrancar, ragnar):
     assert set(agentes) == {"claude", "agy"}
     assert agentes["claude"]["cli_version"] == "fake-claude 1.0" and agentes["claude"]["login"] is True
     assert agentes["agy"]["cli_version"] == "fake-agy 1.0" and agentes["agy"]["login"] is True
-    # Formato de la 0.2, para un Ragnar viejo.
     assert ragnar.auth_frame["agent"] == "claude"
 
 
@@ -73,11 +71,11 @@ async def test_cada_conversacion_corre_con_el_agente_que_ragnar_pide(arrancar, r
 
     await ragnar.enviar(run(con_claude, agent="claude"))
     eventos, _ = await ragnar.hasta_done(con_claude)
-    assert eventos[0]["type"] == "system"  # stream-json de claude, sin traducir
+    assert eventos[0]["type"] == "system"
 
     await ragnar.enviar(run(con_agy, agent="agy"))
     eventos, _ = await ragnar.hasta_done(con_agy)
-    assert [e["type"] for e in eventos][-1] == "result"  # traducido desde agy
+    assert [e["type"] for e in eventos][-1] == "result"
     assert any(e["type"] == "stream_event" for e in eventos)
 
 
@@ -86,7 +84,7 @@ async def test_sin_agente_usa_el_primero_instalado(arrancar, ragnar):
     tid = str(uuid.uuid4())
     await ragnar.enviar(run(tid))
     eventos, _ = await ragnar.hasta_done(tid)
-    assert eventos[0]["type"] == "system"  # claude
+    assert eventos[0]["type"] == "system"
 
 
 async def test_pedir_un_agente_que_no_esta_es_un_error_claro(arrancar, ragnar):
@@ -106,8 +104,6 @@ async def test_un_agente_sin_sesion_se_anuncia_con_login_false(arrancar, ragnar,
 
 
 async def test_el_bridge_avisa_solo_si_cambia_el_estado(arrancar, ragnar, monkeypatch):
-    # Te logueas en agy DESPUES de arrancar el bridge: Ragnar se entera sin
-    # reconectar (frame `agents`).
     monkeypatch.setenv("FAKE_AGY_LOGIN", "0")
     await arrancar(reprobar_cada=1)
     monkeypatch.setenv("FAKE_AGY_LOGIN", "1")
@@ -125,7 +121,6 @@ async def test_el_frame_auth_es_json_serializable(arrancar, ragnar):
 
 
 async def test_probe_de_ragnar_re_sondea_ya_y_responde_con_agents(arrancar, ragnar, monkeypatch):
-    # "Volver a comprobar" desde la app: no espera el ciclo de re-sondeo.
     monkeypatch.setenv("FAKE_AGY_LOGIN", "0")
     await arrancar(reprobar_cada=3600)
     monkeypatch.setenv("FAKE_AGY_LOGIN", "1")

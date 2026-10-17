@@ -28,10 +28,8 @@ from .sincronizar import (
     validar_cli,
 )
 
-# Mismo patron que BootstrapArtifactCreate.artifact_key del backend.
 _PATRON_CLAVE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]*$")
 MAX_CLAVE = 120
-# Un project_key tiene de 2 a 6 caracteres: "_global" (7) no choca con ninguno.
 SIN_PROYECTO = "_global"
 
 
@@ -62,15 +60,11 @@ def sync_once(
         for a in artefactos
         if isinstance(a, dict)
     ]
-    # Todo o nada: una sola ruta fuera de los prefijos (o con otra huella)
-    # rechaza el manifiesto entero sin escribir nada.
     preparados = preparar(cli, raiz, archivos)
     return aplicar_auto(raiz, preparados, registro)
 
 
 def clave_artefacto(cli: str, project_key: Optional[str], ruta: str) -> str:
-    """Estable para (cli, proyecto, ruta): la misma ruta publicada dos veces
-    es el mismo artefacto (una revision nueva), nunca uno distinto."""
     clave = f"{cli}/{project_key or SIN_PROYECTO}/{ruta}"
     if len(clave) <= MAX_CLAVE and _PATRON_CLAVE.match(clave):
         return clave
@@ -79,9 +73,6 @@ def clave_artefacto(cli: str, project_key: Optional[str], ruta: str) -> str:
 
 
 def recolectar(cli: str, carpeta) -> Tuple[List[Tuple[str, str]], List[dict]]:
-    """[(ruta, contenido)] de los archivos de `carpeta` bajo los prefijos de
-    `cli`, y lo que se omitio (con motivo). Nada fuera de los prefijos se
-    mira siquiera: se recorre solo dentro de cada prefijo."""
     validar_cli(cli)
     raiz = resolver_raiz(carpeta)
     encontrados: List[Tuple[str, str]] = []
@@ -91,8 +82,6 @@ def recolectar(cli: str, carpeta) -> Tuple[List[Tuple[str, str]], List[dict]]:
         if not base.is_dir() or _tiene_symlink(raiz, base):
             continue
         for directorio, subdirs, nombres in os.walk(base):
-            # No se entra a carpetas que sean symlinks (os.walk no las sigue,
-            # pero tampoco se listan sus archivos).
             subdirs[:] = sorted(d for d in subdirs if not Path(directorio, d).is_symlink())
             for nombre in sorted(nombres):
                 archivo = Path(directorio, nombre)
@@ -129,8 +118,6 @@ def _tiene_symlink(raiz: Path, ruta: Path) -> bool:
 
 
 def publicar(cliente: ClienteRagnar, cli: str, project_key: Optional[str], carpeta) -> List[dict]:
-    """Sube lo que cambio. Idempotente: con todo igual no crea ninguna
-    revision. Devuelve [{path, status: published|unchanged|skipped, ...}]."""
     encontrados, omitidos = recolectar(cli, carpeta)
     vigentes = cliente.get(
         "/bootstrap/catalog", {"cli": cli, "project_key": project_key, "platform": "any"}

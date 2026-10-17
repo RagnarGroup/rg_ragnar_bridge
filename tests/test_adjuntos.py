@@ -42,7 +42,6 @@ def test_guardar_escribe_las_imagenes_y_suma_las_rutas_al_mensaje(tmp_path):
     assert [a.suffix for a in archivos] == [".png", ".jpg", ".webp"]
     assert archivos[0].read_bytes() == PNG
     assert archivos[0].stat().st_mode & 0o777 == 0o600
-    # Las rutas van en los dos textos: el bridge decide despues cual usa.
     for texto in (turno.prompt, turno.prompt_fallback):
         assert "3 imagenes" in texto
         assert all(str(a) in texto for a in archivos)
@@ -64,9 +63,9 @@ def test_claude_recibe_acceso_a_la_carpeta_de_adjuntos(tmp_path):
 @pytest.mark.parametrize(
     "crudo",
     [
-        [_adjunto(PNG)] * 5,  # demasiadas
-        [_adjunto(PNG, "image/gif")],  # tipo no admitido
-        [_adjunto(JPG, "image/png")],  # dice PNG y no lo es
+        [_adjunto(PNG)] * 5,
+        [_adjunto(PNG, "image/gif")],
+        [_adjunto(JPG, "image/png")],
         [_adjunto(b"#!/bin/sh\nrm -rf ~", "image/png")],
         [{"mime": "image/png", "data": "no es base64 !!"}],
         [{"mime": "image/png"}],

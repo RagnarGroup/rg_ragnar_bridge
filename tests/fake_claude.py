@@ -20,7 +20,6 @@ import time
 
 argv = sys.argv[1:]
 
-# Sondeos del bridge (no son turnos).
 if argv == ["--version"]:
     print("fake-claude 1.0")
     sys.exit(0)
@@ -35,7 +34,6 @@ if "HIJO" in prompt:
     hereda = "HIJO_STDOUT" in prompt or "HIJO_TERCO" in prompt
     codigo = "import time; time.sleep(30)"
     if "HIJO_TERCO" in prompt:
-        # Un nieto que ignora SIGTERM: solo SIGKILL lo saca.
         codigo = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)"
     hijo = subprocess.Popen(
         [sys.executable, "-c", codigo],
@@ -46,9 +44,8 @@ if "HIJO" in prompt:
     with open(os.environ["FAKE_CLAUDE_PID_FILE"], "w", encoding="utf-8") as f:
         f.write(str(hijo.pid))
     if "HIJO_TERCO" in prompt:
-        time.sleep(1)  # que alcance a ignorar SIGTERM antes de que el lider salga
+        time.sleep(1)
 if "GRANDE" in prompt:
-    # Una linea de stream-json enorme (un Read de un archivo gigante).
     print(json.dumps({"type": "user", "relleno": "x" * 300_000}), flush=True)
 if "SLEEP" in prompt:
     time.sleep(60)

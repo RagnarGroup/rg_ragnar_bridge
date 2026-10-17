@@ -21,19 +21,13 @@ _INSTALAR = {
     "codex": "npm install -g @openai/codex",
     "hermes": "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
 }
-# Como iniciar sesion en cada CLI (lo que doctor le dice al usuario que corra).
 _LOGIN = {"claude": "claude", "agy": "agy", "codex": "codex login", "hermes": "hermes"}
 
 
-# Variable de entorno con el token para `init` (la usa install.sh).
 VARIABLE_TOKEN = "RAGNAR_BRIDGE_TOKEN"
 
 
 def _leer_token(args) -> str:
-    """El token de `init` SIN pasar por argv (RAG-208): los argumentos de un
-    proceso los ve cualquiera con `ps` y quedan en el historial del shell.
-    Orden: --token (deprecado, con aviso), $RAGNAR_BRIDGE_TOKEN, la primera
-    linea de stdin si no es una terminal, o se pide sin eco."""
     if args.token:
         print(
             f"AVISO: --token esta deprecado (queda visible en `ps` y en el historial). "
@@ -65,8 +59,6 @@ def _init(args) -> int:
         else:
             cfg.agy_model = args.model
 
-    # Se guarda la ruta ABSOLUTA de cada CLI encontrado: el servicio de systemd
-    # no siempre ve el mismo PATH que tu terminal.
     if args.agent:
         binario = args.cli or shutil.which(args.agent)
         if not binario:
@@ -102,7 +94,6 @@ def _init(args) -> int:
 
 
 def _doctor(args) -> int:
-    """Verifica cada eslabon SIN correr ningun turno (no gasta cuota)."""
     ok = True
 
     def paso(bien: bool, texto: str) -> None:
@@ -119,9 +110,6 @@ def _doctor(args) -> int:
         return 1
     paso(True, f"config {ruta}")
 
-    # Con al menos UN agente instalado el bridge sirve: la app deja elegir entre
-    # los que funcionan. Falta de sesion es un aviso, no un error: se corrige
-    # logueandose y el bridge lo detecta solo (re-sondea cada pocos minutos).
     adaptadores = crear_adaptadores(cfg, ruta.parent)
     usables = 0
     for nombre, adaptador in adaptadores.items():
@@ -140,7 +128,7 @@ def _doctor(args) -> int:
         paso(True, f"Ragnar acepto el token (servidor {nombre!r})")
     except ErrorFatal as e:
         paso(False, f"Ragnar rechazo la conexion: {e}")
-    except Exception as e:  # red, DNS, TLS...
+    except Exception as e:
         paso(False, f"no pude conectar con {cfg.url}: {type(e).__name__}: {e}")
 
     print("Todo en orden." if ok else "Hay pasos con FALLA: corregilos y volve a correr `ragnar-bridge doctor`.")
@@ -160,15 +148,11 @@ def _run(args) -> int:
         print(f"Ragnar rechazo la conexion: {e}", file=sys.stderr)
         return SALIDA_AUTH
     except (KeyboardInterrupt, asyncio.CancelledError):
-        # SIGTERM/SIGINT: los turnos en curso ya se cortaron al cancelar.
         pass
     return 0
 
 
 def _sync(args) -> int:
-    """Pull del catalogo en el PC, sin daemon (RAG-217). Pensado para un hook
-    SessionStart: imprime poco, y un conflicto (archivo editado a mano) no es
-    un error: se avisa y no se pisa."""
     if not args.once:
         print(
             "Por ahora `sync` corre una sola vez: pasá --once. En un servidor, el "

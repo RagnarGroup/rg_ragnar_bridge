@@ -63,7 +63,6 @@ async def test_primer_turno_usa_session_id_y_fallback_luego_resume(conectado, ra
     assert "--session-id" in argv and "--resume" not in argv
     assert argv[-1] == "CON CONTEXTO"
 
-    # Simula que el CLI dejo su sesion: <config_dir>/projects/<cwd saneado>/<id>.jsonl
     import re
     carpeta = re.sub(r"[^a-zA-Z0-9]", "-", str((tmp_path / "work").resolve()))
     destino = tmp_path / "claude" / "projects" / carpeta
@@ -109,8 +108,6 @@ async def test_session_id_invalido_se_rechaza(conectado, ragnar):
 
 
 async def test_conceder_es_de_la_conversacion_y_no_toca_tu_settings(conectado, ragnar, tmp_path):
-    """RAG-200: la regla aprobada va a un settings PROPIO de la conversacion
-    (`--settings`), nunca al ~/.claude/settings.json del usuario."""
     tid, otra = str(uuid.uuid4()), str(uuid.uuid4())
     await ragnar.enviar(_run(tid, conceder="Bash(docker ps:*)"))
     eventos, _ = await ragnar.hasta_done(tid)
@@ -120,11 +117,9 @@ async def test_conceder_es_de_la_conversacion_y_no_toca_tu_settings(conectado, r
     argv = eventos[0]["argv"]
     assert argv[argv.index("--settings") + 1] == str(propio)
 
-    # Los turnos siguientes de ESA conversacion siguen con el permiso...
     await ragnar.enviar(_run(tid, prompt="sigue"))
     eventos, _ = await ragnar.hasta_done(tid)
     assert eventos[0]["argv"][eventos[0]["argv"].index("--settings") + 1] == str(propio)
-    # ...y otra conversacion no lo hereda.
     await ragnar.enviar(_run(otra))
     eventos, _ = await ragnar.hasta_done(otra)
     assert "--settings" not in eventos[0]["argv"]

@@ -54,24 +54,11 @@ class HermesAdaptador(Adaptador):
         return self.cfg.hermes_cmd
 
     def sesion_iniciada(self) -> Optional[bool]:
-        """A diferencia de `codex login status`/`agy models`, Hermes no tiene
-        un comando de solo-estado que distinga "listo para conversar" de
-        "hay algo que mejorar". Probado en vivo (RAG-187): `hermes doctor`
-        devuelve exit 1 por cosas irrelevantes para un turno (una dependencia
-        opcional del navegador con una vulnerabilidad npm, proveedores que
-        esta instancia ni usa) en una instalacion que SI podia conversar
-        normalmente -- `False` ahi seria un aviso equivocado. Mejor no decir
-        nada que decir algo mal."""
         return None
 
     def cuota(self, version: str) -> Optional[dict]:
-        """Hermes no expone un comando de solo lectura para leer limites de
-        cuota (a diferencia de `codex app-server`/`agy -p=/usage`), y el
-        proveedor detras de una instancia puede ni ser uno con cuota por
-        ventana (proxy/custom). Sin dato de cortesia por ahora."""
         return None
 
-    # ---- estado propio (session_id de Ragnar -> session_id de Hermes)
 
     @property
     def _ruta_estado(self) -> Path:
@@ -100,15 +87,9 @@ class HermesAdaptador(Adaptador):
         sesiones.setdefault(session_id, {}).update(campos)
         self._guardar(sesiones)
 
-    # ---- comando
 
     def preparar(self, turno: Turno, username: str) -> Comando:
         if turno.conceder:
-            # Hermes no tiene capa de permisos que conceder: en --oneshot ya
-            # corre sus herramientas sin preguntar. Si Ragnar manda un
-            # `conceder` es que le ofrecio al humano una tarjeta "Autorizar"
-            # que aca no cambia nada; se deja constancia en vez de tragarlo
-            # en silencio (RAG-187).
             log.warning(
                 "Ragnar pidio conceder %r a Hermes, que no tiene permisos que conceder "
                 "(corre sus herramientas sin pedir aprobacion): no cambia nada en este turno.",
@@ -142,23 +123,10 @@ class HermesAdaptador(Adaptador):
 
 
 class TraductorHermes(Traductor):
-    """Convierte el JSONL de `hermes chat --format stream-json` al stream-json
-    de Claude:
-
-      system (subtype init)     -> (guarda session_id)
-      tool_use                  -> assistant / tool_use
-      tool_result                -> user / tool_result
-      text                        -> stream_event / content_block_delta / text_delta
-      result                       -> result (con usage)
-    """
-
     def __init__(self, adaptador: HermesAdaptador, turno: Turno):
         self._ad = adaptador
         self._turno = turno
         self.session_id: Optional[str] = None
-        # tool_use/tool_result de Hermes no traen un id compartido: se generan
-        # acá y se emparejan en orden de llegada (Hermes corre las
-        # herramientas de a una, nunca en paralelo dentro de un turno).
         self._pendientes: List[str] = []
         self._contador = 0
 

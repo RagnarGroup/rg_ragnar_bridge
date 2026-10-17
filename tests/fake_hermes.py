@@ -47,8 +47,6 @@ if "CRASH" in query:
     sys.exit(3)
 
 if "TOOL" in query:
-    # Forma real capturada en vivo (RAG-187): un solo `text` al final, con el
-    # "\n\n" que el propio Hermes antepone despues de una herramienta.
     out({"type": "tool_use", "name": "terminal", "input": {"command": "echo $((40 + 2))"}, "timestamp": 1790621279239})
     out({"type": "tool_result", "name": "terminal", "output": "42", "duration_ms": 838, "is_error": False, "timestamp": 1790621280082})
     out({"type": "text", "text": "\n\n42", "timestamp": 1790621282933})
