@@ -18,6 +18,7 @@ from .sincronizar import (
     PREFIJOS_BOOTSTRAP,
     Registro,
     aplicar_auto,
+    es_enlace,
     preparar,
     resolver_raiz,
     ruta_permitida,
@@ -79,11 +80,11 @@ def recolectar(cli: str, carpeta) -> Tuple[List[Tuple[str, str]], List[dict]]:
         if not base.is_dir() or _tiene_symlink(raiz, base):
             continue
         for directorio, subdirs, nombres in os.walk(base):
-            subdirs[:] = sorted(d for d in subdirs if not Path(directorio, d).is_symlink())
+            subdirs[:] = sorted(d for d in subdirs if not d.startswith(".") and not es_enlace(Path(directorio, d)))
             for nombre in sorted(nombres):
                 archivo = Path(directorio, nombre)
                 ruta = archivo.relative_to(raiz).as_posix()
-                if archivo.is_symlink():
+                if es_enlace(archivo):
                     omitidos.append({"path": ruta, "motivo": "enlace simbólico"})
                     continue
                 if not ruta_permitida(cli, ruta):
@@ -109,7 +110,7 @@ def _tiene_symlink(raiz: Path, ruta: Path) -> bool:
     actual = raiz
     for parte in ruta.relative_to(raiz).parts:
         actual = actual / parte
-        if actual.is_symlink():
+        if es_enlace(actual):
             return True
     return False
 

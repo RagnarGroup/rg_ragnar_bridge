@@ -322,6 +322,30 @@ def test_publicar_no_sigue_symlinks(repo, tmp_path):
     assert encontrados == [] and omitidos == [{"path": ".claude/agents/link.md", "motivo": "enlace simbólico"}]
 
 
+def test_publicar_salta_carpetas_ocultas(repo):
+    (repo / ".claude/agents/.git/hooks").mkdir(parents=True)
+    (repo / ".claude/agents/.git/config").write_text("[remote]")
+    (repo / ".claude/agents/.git/hooks/pre-commit.sample").write_text("#!/bin/sh")
+    (repo / ".claude/agents/rafael.md").write_text("rafael")
+    encontrados, _ = recolectar("claude", repo)
+    assert [ruta for ruta, _ in encontrados] == [".claude/agents/rafael.md"]
+
+
+@pytest.mark.skipif(not sys.platform.startswith("win"), reason="las junctions son de Windows")
+def test_publicar_no_sigue_junctions(repo, tmp_path):
+    import subprocess
+
+    afuera = tmp_path / "otra_skill"
+    afuera.mkdir()
+    (afuera / "SKILL.md").write_text("de terceros")
+    (repo / ".claude/skills").mkdir(parents=True)
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(repo / ".claude/skills/otra"), str(afuera)], check=True, capture_output=True)
+    (repo / ".claude/agents").mkdir(parents=True)
+    (repo / ".claude/agents/rafael.md").write_text("rafael")
+    encontrados, _ = recolectar("claude", repo)
+    assert [ruta for ruta, _ in encontrados] == [".claude/agents/rafael.md"]
+
+
 def _main(monkeypatch, *argv):
     monkeypatch.setattr(sys, "argv", ["ragnar-bridge", *argv])
     with pytest.raises(SystemExit) as salida:

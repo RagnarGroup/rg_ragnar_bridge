@@ -99,12 +99,25 @@ def preparar(cli, raiz: Path, archivos) -> List[Preparado]:
         actual = raiz
         for parte in PurePosixPath(ruta).parts:
             actual = actual / parte
-            if actual.is_symlink():
+            if es_enlace(actual):
                 raise ManifiestoInvalido("No se permiten enlaces simbólicos en rutas de destino.")
         if destino.exists() and not destino.is_file():
             raise ManifiestoInvalido("La ruta de destino existe y no es un archivo regular.")
         preparados.append((ruta, destino, contenido))
     return preparados
+
+
+def es_enlace(ruta: Path) -> bool:
+    if ruta.is_symlink():
+        return True
+    es_junction = getattr(os.path, "isjunction", None)
+    if es_junction is not None:
+        return es_junction(ruta)
+    try:
+        atributos = getattr(os.lstat(ruta), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(atributos & 0x400)
 
 
 def _dentro_de(ruta: Path, raiz: Path) -> bool:
