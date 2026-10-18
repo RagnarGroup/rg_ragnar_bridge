@@ -1,7 +1,7 @@
 """Adaptador de Claude Code: arma su comando, detecta si una sesion sigue viva,
 concede permisos por conversacion, escribe el MCP de tickets de cada turno y lee
 la cuota (con el token OAuth del CLI, que renueva el propio CLI si vencio, y sin
-consultar a Anthropic mas de una vez cada 5 min ni durante un 429)."""
+consultar a Anthropic mas de una vez cada 30 s ni durante un 429)."""
 
 import json
 import logging
@@ -24,7 +24,7 @@ from .base import Adaptador, Comando, bloque_de_cuota
 _URL_USO = "https://api.anthropic.com/api/oauth/usage"
 _VENTANAS_USO = (("five_hour", None, "5h"), ("seven_day", None, "semana"), ("seven_day_opus", "Opus", "semana"), ("seven_day_sonnet", "Sonnet", "semana"))
 
-_MIN_ENTRE_CONSULTAS = 300
+_MIN_ENTRE_CONSULTAS = 30
 _ESPERA_TRAS_429 = 900
 _MARGEN_VENCIMIENTO = 60
 _estado_cuota: dict = {}
