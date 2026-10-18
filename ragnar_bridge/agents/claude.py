@@ -1,5 +1,7 @@
 """Adaptador de Claude Code: arma su comando, detecta si una sesion sigue viva,
-concede permisos por conversacion y escribe el MCP de tickets de cada turno."""
+concede permisos por conversacion, escribe el MCP de tickets de cada turno y lee
+la cuota (con el token OAuth del CLI, que renueva el propio CLI si vencio, y sin
+consultar a Anthropic mas de una vez cada 5 min ni durante un 429)."""
 
 import json
 import logging
@@ -7,6 +9,8 @@ import os
 import re
 import shutil
 import subprocess
+import time
+import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +23,11 @@ from .base import Adaptador, Comando, bloque_de_cuota
 
 _URL_USO = "https://api.anthropic.com/api/oauth/usage"
 _VENTANAS_USO = (("five_hour", None, "5h"), ("seven_day", None, "semana"), ("seven_day_opus", "Opus", "semana"), ("seven_day_sonnet", "Sonnet", "semana"))
+
+_MIN_ENTRE_CONSULTAS = 300
+_ESPERA_TRAS_429 = 900
+_MARGEN_VENCIMIENTO = 60
+_estado_cuota: dict = {}
 
 _PATRON_NO_ALFANUMERICO = re.compile(r"[^a-zA-Z0-9]")
 
@@ -122,13 +131,22 @@ class ClaudeAdaptador(Adaptador):
             return None
 
     def cuota(self, version: str) -> Optional[dict]:
+        estado = _estado_cuota.setdefault(self.cfg.config_dir_abs, {"ultima": None, "proxima": 0.0})
+        ahora = time.time()
+        if ahora < estado["proxima"]:
+            return estado["ultima"]
+        estado["proxima"] = ahora + _MIN_ENTRE_CONSULTAS
+        credenciales = self._credenciales()
+        if credenciales is None:
+            return estado["ultima"]
+        vence = credenciales.get("expiresAt")
+        if isinstance(vence, (int, float)) and vence / 1000 < ahora + _MARGEN_VENCIMIENTO:
+            self._renovar_token()
+            credenciales = self._credenciales() or credenciales
+        token = credenciales.get("accessToken")
+        if not token:
+            return estado["ultima"]
         try:
-            credenciales = json.loads(
-                (Path(self.cfg.config_dir_abs) / ".credentials.json").read_text(encoding="utf-8")
-            ).get("claudeAiOauth") or {}
-            token = credenciales.get("accessToken")
-            if not token:
-                return None
             pedido = urllib.request.Request(
                 _URL_USO,
                 headers={
@@ -154,10 +172,39 @@ class ClaudeAdaptador(Adaptador):
                     )
                 )
             plan = credenciales.get("subscriptionType")
+        except urllib.error.HTTPError as error:
+            if error.code == 429:
+                estado["proxima"] = ahora + _espera_429(error)
+                log.info("Anthropic limito la consulta de cuota de Claude Code; se reintenta mas tarde.")
+            else:
+                log.debug("No se pudo leer la cuota de Claude Code.", exc_info=True)
+            return estado["ultima"]
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             log.debug("No se pudo leer la cuota de Claude Code.", exc_info=True)
+            return estado["ultima"]
+        if bloques:
+            estado["ultima"] = {"plan": str(plan)[:30] if plan else None, "bloques": bloques}
+        return estado["ultima"]
+
+    def _credenciales(self) -> Optional[dict]:
+        try:
+            datos = json.loads((Path(self.cfg.config_dir_abs) / ".credentials.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
             return None
-        return {"plan": str(plan)[:30] if plan else None, "bloques": bloques} if bloques else None
+        oauth = datos.get("claudeAiOauth") if isinstance(datos, dict) else None
+        return oauth if isinstance(oauth, dict) else None
+
+    def _renovar_token(self) -> None:
+        try:
+            subprocess.run(
+                [*self.cmd, "-p", "ok", "--model", "haiku", "--no-session-persistence"],
+                capture_output=True,
+                timeout=90,
+                cwd=self.cfg.workdir_abs,
+                env=_entorno(self.cfg),
+            )
+        except (OSError, subprocess.SubprocessError):
+            log.debug("No se pudo renovar el token de Claude Code.", exc_info=True)
 
     def preparar(self, turno: Turno, username: str) -> Comando:
         cfg = self.cfg
@@ -201,6 +248,13 @@ def construir_comando(
     cmd += ["--resume" if reanudar else "--session-id", turno.session_id, texto]
 
     return Comando(cmd, _entorno(cfg))
+
+
+def _espera_429(error: urllib.error.HTTPError) -> float:
+    try:
+        return max(float(error.headers.get("Retry-After") or 0), _ESPERA_TRAS_429)
+    except (TypeError, ValueError, AttributeError):
+        return _ESPERA_TRAS_429
 
 
 def _entorno(cfg: Config) -> dict:
