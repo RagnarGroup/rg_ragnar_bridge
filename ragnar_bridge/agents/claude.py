@@ -7,13 +7,18 @@ import os
 import re
 import shutil
 import subprocess
+import urllib.request
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
 from ..config import Config
 from ..protocolo import Turno, regla_concedible
 from ..tickets import token_de_tickets, url_mcp_tickets  # noqa: F401  (se re-exportan)
-from .base import Adaptador, Comando
+from .base import Adaptador, Comando, bloque_de_cuota
+
+_URL_USO = "https://api.anthropic.com/api/oauth/usage"
+_VENTANAS_USO = (("five_hour", None, "5h"), ("seven_day", None, "semana"), ("seven_day_opus", "Opus", "semana"), ("seven_day_sonnet", "Sonnet", "semana"))
 
 _PATRON_NO_ALFANUMERICO = re.compile(r"[^a-zA-Z0-9]")
 
@@ -115,6 +120,44 @@ class ClaudeAdaptador(Adaptador):
             return bool(json.loads(salida.stdout).get("loggedIn"))
         except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
             return None
+
+    def cuota(self, version: str) -> Optional[dict]:
+        try:
+            credenciales = json.loads(
+                (Path(self.cfg.config_dir_abs) / ".credentials.json").read_text(encoding="utf-8")
+            ).get("claudeAiOauth") or {}
+            token = credenciales.get("accessToken")
+            if not token:
+                return None
+            pedido = urllib.request.Request(
+                _URL_USO,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "anthropic-beta": "oauth-2025-04-20",
+                    "User-Agent": "ragnar-bridge",
+                },
+            )
+            with urllib.request.urlopen(pedido, timeout=20) as respuesta:
+                datos = json.loads(respuesta.read().decode("utf-8"))
+            bloques = []
+            for clave, grupo, ventana_ in _VENTANAS_USO:
+                limite = datos.get(clave)
+                if not isinstance(limite, dict) or limite.get("utilization") is None:
+                    continue
+                resetea = limite.get("resets_at")
+                bloques.append(
+                    bloque_de_cuota(
+                        grupo,
+                        ventana_,
+                        float(limite["utilization"]),
+                        datetime.fromisoformat(resetea.replace("Z", "+00:00")) if resetea else None,
+                    )
+                )
+            plan = credenciales.get("subscriptionType")
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            log.debug("No se pudo leer la cuota de Claude Code.", exc_info=True)
+            return None
+        return {"plan": str(plan)[:30] if plan else None, "bloques": bloques} if bloques else None
 
     def preparar(self, turno: Turno, username: str) -> Comando:
         cfg = self.cfg
