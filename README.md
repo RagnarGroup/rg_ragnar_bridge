@@ -39,7 +39,7 @@ conversación (una conversación sigue con el CLI con el que empezó).
 | Sesión de la conversación | `--session-id` / `--resume` (la maneja el CLI) | el bridge recuerda qué conversación de agy es cuál (`agy-estado.json`) | el bridge recuerda qué hilo de Codex es cuál (`codex-estado.json`) y lo retoma con `codex exec resume` | el bridge recuerda qué sesión de Hermes es cuál (`hermes-estado.json`) y la retoma con `hermes chat --resume` |
 | Permisos de herramientas | Ragnar te muestra la tarjeta **Autorizar**; al aprobar, el bridge suma **esa** herramienta a los permisos de **esa conversación** (`--settings` propio, nunca tu `~/.claude/settings.json`) | agy **deniega** solo lo que pide permiso (en modo headless no puede preguntar). Ragnar te muestra la misma tarjeta; al aprobar, **esa conversación** corre con las herramientas aprobadas | En `exec` Codex **no puede preguntar**: lo que el sandbox no permite falla. Sin tarjeta **Autorizar**; el alcance lo fija `codex_sandbox` (default `read-only`: lee y conversa) | Probado en vivo corriendo una herramienta de shell en `--oneshot` sin pedir aprobación (a diferencia de agy). Sin tarjeta **Autorizar** por ahora |
 | Herramientas de tickets de Ragnar (MCP) | sí (token efímero de quien escribe) | sí, por un puente propio (`ragnar-tickets`, se registra solo) | sí, por el mismo puente, declarado en cada turno (no se escribe nada en tu `config.toml`) | todavía no (RAG-187) |
-| Cuota real de la suscripción | todavía no | sí, desde agy 1.1.11 (`agy -p "/usage"`) | sí (`codex app-server`, límites de 5 h y semanal) | todavía no |
+| Cuota real de la suscripción | sí, desde 0.11.0 (endpoint de uso de Anthropic con el token del CLI) | sí, desde agy 1.1.11 (`agy -p "/usage"`) | sí (`codex app-server`, límites de 5 h y semanal) | todavía no |
 | Probado con | Claude Code 2.1.170 | agy 1.1.27, 1.2.2 y 1.2.7 | codex-cli 0.157.0 | hermes-agent 0.21.5 |
 
 Si no elegís ninguno en la conversación nueva, Ragnar usa el primero que
@@ -501,7 +501,7 @@ Tu configuración (`~/.config/ragnar-bridge/config.json`, con el token del servi
 
 Si preferís, volver a correr el comando de instalación que muestra la app (Paso 4) también actualiza y reinicia.
 
-Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app; **0.9.0** recibe imágenes adjuntas en el chat; **0.10.0** suma el protocolo 2, la sincronización automática de agentes (`sync --once`, `publicar`) y los arreglos de la auditoría (permisos por conversación, procesos huérfanos, tope por turno).
+Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app; **0.9.0** recibe imágenes adjuntas en el chat; **0.10.0** suma el protocolo 2, la sincronización automática de agentes (`sync --once`, `publicar`) y los arreglos de la auditoría (permisos por conversación, procesos huérfanos, tope por turno). **0.11.0** informa la cuota real de Claude Code; **0.11.1** renueva su token vencido a través del CLI y respeta los 429; **0.12.0** consulta la cuota solo cuando la app la pide (`/usage`, frame `probe`): los sondeos de rutina (al conectar y cada 120 s) reportan versión y sesión y conservan la última cuota conocida.
 
 ## Desinstalar
 
@@ -546,8 +546,6 @@ arme el comando y traduzca sus eventos al formato de Claude Code (ver
 
 ## Pendiente
 
-- Cuota real de Claude Code (Antigravity y Codex ya la informan en el sondeo; para Claude hoy `POST /claude/quota`
-  responde 501).
 - Tools de tickets de Ragnar (MCP) para Antigravity.
 - Tarjeta **Autorizar** para Codex (hoy el alcance se fija con `codex_sandbox`).
 - Config global por máquina (`~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md`): necesita un prefijo de

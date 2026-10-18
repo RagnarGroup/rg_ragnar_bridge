@@ -308,13 +308,24 @@ def test_un_agy_anterior_a_1_1_11_ni_se_consulta(tmp_path, monkeypatch):
     assert not (tmp_path / "agy" / "usage-llamado").exists()
 
 
-async def test_la_cuota_llega_en_un_frame_agents_despues_del_auth(arrancar, ragnar, monkeypatch):
+async def test_la_cuota_llega_en_un_frame_agents_despues_del_probe(arrancar, ragnar, monkeypatch):
     monkeypatch.setenv("FAKE_AGY_VERSION", "fake-agy 1.2.11")
     await arrancar()
     assert "quota" not in ragnar.auth_frame["agents"][0]
+    await ragnar.enviar({"type": "probe"})
+    while True:
+        msg = await asyncio.wait_for(ragnar.recibidos.get(), 15)
+        if msg["type"] == "agents" and msg["agents"][0].get("quota"):
+            break
+    agy = msg["agents"][0]
+    assert agy["name"] == "agy" and len(agy["quota"]["bloques"]) == 3
+
+
+async def test_al_conectar_no_se_consulta_la_cuota(arrancar, ragnar, monkeypatch):
+    monkeypatch.setenv("FAKE_AGY_VERSION", "fake-agy 1.2.11")
+    await arrancar()
     while True:
         msg = await asyncio.wait_for(ragnar.recibidos.get(), 15)
         if msg["type"] == "agents":
             break
-    agy = msg["agents"][0]
-    assert agy["name"] == "agy" and len(agy["quota"]["bloques"]) == 3
+    assert "quota" not in msg["agents"][0]

@@ -1,6 +1,6 @@
 """Cuota de Claude Code: se lee del endpoint de uso de Anthropic con el token
 OAuth del CLI; si vencio lo renueva el propio CLI, y no se consulta mas de una
-vez cada 5 min ni durante un 429."""
+vez cada 30 s ni durante un 429."""
 
 import io
 import json
@@ -75,7 +75,7 @@ def test_si_anthropic_rechaza_el_token_la_cuota_es_none(tmp_path, monkeypatch):
     assert _adaptador(tmp_path, {"claudeAiOauth": {"accessToken": "vencido"}}).cuota("2.1.0") is None
 
 
-def test_no_consulta_de_nuevo_antes_de_5_minutos(tmp_path, monkeypatch):
+def test_no_consulta_de_nuevo_antes_de_30_segundos(tmp_path, monkeypatch):
     llamadas = []
     monkeypatch.setattr(modulo.urllib.request, "urlopen", lambda p, timeout: llamadas.append(p) or _uso())
     adaptador = _adaptador(tmp_path, {"claudeAiOauth": {"accessToken": "tok"}})

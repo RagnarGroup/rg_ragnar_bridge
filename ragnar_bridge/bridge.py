@@ -2,8 +2,10 @@
 frames: run, cancel, probe, bootstrap y files.
 
 Cada turno corre en su propio grupo de procesos para poder matarlo entero al
-cancelar, al vencer el tope de tiempo o al perder la conexion. El protocolo lo
-define services/bridge_hub.py en ragnar_group_back."""
+cancelar, al vencer el tope de tiempo o al perder la conexion. La cuota de los
+agentes solo se consulta cuando Ragnar la pide con probe (el /usage de la app);
+los sondeos de rutina conservan la ultima conocida. El protocolo lo define
+services/bridge_hub.py en ragnar_group_back."""
 
 import asyncio
 import json
@@ -146,7 +148,7 @@ class Bridge:
 
     async def sesion(self, ws) -> None:
         self._ws = ws
-        self.agentes = await asyncio.to_thread(sondear, self.adaptadores)
+        self.agentes = self._con_cuotas_previas(await asyncio.to_thread(sondear, self.adaptadores))
         primero = self.agentes[0] if self.agentes else {}
         await ws.send(
             json.dumps(
@@ -179,7 +181,7 @@ class Bridge:
             ", ".join(a["name"] for a in self.agentes) or "ninguno instalado",
         )
 
-        tarea_cuota = asyncio.create_task(self._sondear_y_avisar())
+        tarea_cuota = asyncio.create_task(self._sondear_y_avisar(con_cuota=False))
         self._tareas_aux.add(tarea_cuota)
         tarea_cuota.add_done_callback(self._tareas_aux.discard)
         vigia = asyncio.create_task(self._vigilar_agentes())
@@ -196,9 +198,10 @@ class Bridge:
             await self._cortar_todo()
             self._ws = None
 
-    async def _sondear_y_avisar(self) -> None:
+    async def _sondear_y_avisar(self, con_cuota: bool = True) -> None:
         try:
-            self.agentes = await asyncio.to_thread(sondear, self.adaptadores, True)
+            nuevos = await asyncio.to_thread(sondear, self.adaptadores, con_cuota)
+            self.agentes = nuevos if con_cuota else self._con_cuotas_previas(nuevos)
             await self.enviar({"type": "agents", "agents": self.agentes})
         except Exception:
             log.exception("No se pudo responder al pedido de re-sondeo.")
@@ -207,7 +210,7 @@ class Bridge:
         while True:
             await asyncio.sleep(self.cfg.reprobar_cada)
             try:
-                nuevos = await asyncio.to_thread(sondear, self.adaptadores, True)
+                nuevos = self._con_cuotas_previas(await asyncio.to_thread(sondear, self.adaptadores, False))
                 if nuevos != self.agentes:
                     self.agentes = nuevos
                     await self.enviar({"type": "agents", "agents": nuevos})
@@ -216,6 +219,13 @@ class Bridge:
                 raise
             except Exception:
                 log.exception("No se pudieron re-sondear los agentes.")
+
+    def _con_cuotas_previas(self, agentes: list) -> list:
+        previas = {a.get("name"): a.get("quota") for a in self.agentes if isinstance(a, dict)}
+        return [
+            {**a, "quota": previas[a.get("name")]} if previas.get(a.get("name")) is not None else a
+            for a in agentes
+        ]
 
     async def _atender(self, mensaje: dict) -> None:
         tipo = mensaje.get("type")
