@@ -201,6 +201,9 @@ class Bridge:
     async def _sondear_y_avisar(self, con_cuota: bool = True) -> None:
         try:
             nuevos = await asyncio.to_thread(sondear, self.adaptadores, con_cuota)
+            if con_cuota:
+                ahora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                nuevos = [{**a, "quota_at": ahora} for a in nuevos]
             self.agentes = nuevos if con_cuota else self._con_cuotas_previas(nuevos)
             await self.enviar({"type": "agents", "agents": self.agentes})
         except Exception:
@@ -221,9 +224,11 @@ class Bridge:
                 log.exception("No se pudieron re-sondear los agentes.")
 
     def _con_cuotas_previas(self, agentes: list) -> list:
-        previas = {a.get("name"): a.get("quota") for a in self.agentes if isinstance(a, dict)}
+        previas = {a.get("name"): a for a in self.agentes if isinstance(a, dict) and a.get("quota") is not None}
         return [
-            {**a, "quota": previas[a.get("name")]} if previas.get(a.get("name")) is not None else a
+            {**a, "quota": previas[a["name"]]["quota"], "quota_at": previas[a["name"]].get("quota_at")}
+            if a.get("name") in previas
+            else a
             for a in agentes
         ]
 
