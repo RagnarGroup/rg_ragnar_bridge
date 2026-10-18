@@ -56,6 +56,10 @@ async def test_el_probe_consulta_la_cuota_y_la_rutina_la_conserva(tmp_path):
     assert agente.consultas == 1
     assert bridge._ws.enviados[-1]["agents"][0]["quota"] == cuota
 
+    sellada = bridge._ws.enviados[-1]["agents"][0]["quota_at"]
+    assert sellada.endswith("Z")
+
     await bridge._sondear_y_avisar(con_cuota=False)
     assert agente.consultas == 1
     assert bridge._ws.enviados[-1]["agents"][0]["quota"] == cuota
+    assert bridge._ws.enviados[-1]["agents"][0]["quota_at"] == sellada
