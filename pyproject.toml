@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ragnar-bridge"
-version = "0.12.1"
+version = "0.13.0"
 description = "Puente entre el CLI de Claude Code, de Antigravity o de Codex en tu propio servidor y Ragnar: conexion WebSocket saliente, tus credenciales no salen de tu maquina."
 readme = "README.md"
 requires-python = ">=3.9"

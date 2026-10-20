@@ -189,8 +189,8 @@ class AgyAdaptador(Adaptador):
         ]
         if cfg.agy_model:
             argv += ["--model", cfg.agy_model]
-        for d in cfg.add_dirs:
-            argv += ["--add-dir", os.path.abspath(os.path.expanduser(d))]
+        for d in [os.path.abspath(os.path.expanduser(d)) for d in cfg.add_dirs] + list(turno.dirs_extra):
+            argv += ["--add-dir", d]
         if reanudar:
             argv += ["--conversation", conversacion]
         if auto:

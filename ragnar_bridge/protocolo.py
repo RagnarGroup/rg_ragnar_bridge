@@ -1,4 +1,4 @@
-"""Forma de un `run` de Ragnar (validacion de session_id, prompt y adjuntos) y
+"""Forma de un `run` de Ragnar (validacion de session_id, prompt, adjuntos e images_out) y
 reglas de permisos que valen para cualquier agente."""
 
 import base64
@@ -39,6 +39,8 @@ class Turno:
     token_de_turno: bool = False
     adjuntos: Tuple[Tuple[str, bytes], ...] = ()
     dirs_extra: Tuple[str, ...] = ()
+    imagenes_salida: bool = False
+    dir_salida: Optional[str] = None
 
 
 def validar_run(run: dict) -> Turno:
@@ -69,6 +71,7 @@ def validar_run(run: dict) -> Turno:
         tickets_token or None,
         "tickets_token" in run,
         _validar_adjuntos(run.get("attachments")),
+        imagenes_salida=run.get("images_out") is True,
     )
 
 

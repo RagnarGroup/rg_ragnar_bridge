@@ -25,6 +25,7 @@ from websockets.exceptions import WebSocketException
 
 from . import PROTOCOLO, __version__
 from .adjuntos import guardar as guardar_adjuntos
+from .salidas import preparar as preparar_salidas, recolectar as recolectar_salidas
 from .agents import crear_adaptadores, sondear
 from .archivos import ArchivosEditables, ErrorArchivo
 from .config import Config, ruta_por_defecto
@@ -401,6 +402,7 @@ class Bridge:
 
         try:
             turno = await asyncio.to_thread(guardar_adjuntos, self.estado_dir, turno)
+            turno = await asyncio.to_thread(preparar_salidas, self.estado_dir, turno)
             comando = adaptador.preparar(turno, self.username)
         except OSError as e:
             await self.enviar(
@@ -437,7 +439,7 @@ class Bridge:
                 log.info("El turno %s ya estaba cancelado: se corta al arrancar.", task_id)
                 await self._matar_proceso(proceso)
             await asyncio.wait_for(
-                self._seguir_proceso(task_id, proceso, traductor), self.cfg.timeout_turno
+                self._seguir_proceso(task_id, proceso, traductor, turno.dir_salida), self.cfg.timeout_turno
             )
         except asyncio.TimeoutError:
             log.warning("El turno %s supero el tope de %s s: se corta.", task_id, self.cfg.timeout_turno)
@@ -456,7 +458,7 @@ class Bridge:
         finally:
             self._procesos.pop(task_id, None)
 
-    async def _seguir_proceso(self, task_id: str, proceso, traductor) -> None:
+    async def _seguir_proceso(self, task_id: str, proceso, traductor, dir_salida: Optional[str] = None) -> None:
         stderr_buf = bytearray()
 
         async def leer_stderr():
@@ -499,6 +501,9 @@ class Bridge:
             stderr = bytes(stderr_buf).decode("utf-8", errors="replace")
             for raw in traductor.fin(codigo, stderr):
                 await self.enviar({"type": "event", "task_id": task_id, "raw": raw})
+            if dir_salida:
+                for imagen in await asyncio.to_thread(recolectar_salidas, dir_salida):
+                    await self.enviar({"type": "image", "task_id": task_id, **imagen})
             await self.enviar(
                 {"type": "done", "task_id": task_id, "exit_code": codigo, "stderr": stderr}
             )
