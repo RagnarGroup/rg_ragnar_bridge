@@ -227,10 +227,25 @@ de archivos. Ragnar solo la transporta, no la guarda.
 
 - El bridge comprueba que cada archivo sea de verdad una imagen del tipo que
   dice ser, y rechaza el turno si pesa más de 4 MiB (8 MiB entre todas).
-- A Claude Code le da acceso a esa carpeta solo en ese turno (`--add-dir`).
+- A Claude Code y a Antigravity les da acceso a esa carpeta solo en ese turno (`--add-dir`).
 - Los adjuntos de una conversación que lleva 14 días sin recibir otro se borran.
 
 Requiere `ragnar-bridge` **0.9.0 o posterior**.
+
+### Imágenes que genera el agente
+
+Al revés también: si Ragnar lo acepta (el `run` trae `images_out`), cada turno
+tiene una carpeta propia en `~/.config/ragnar-bridge/salidas/<conversación>/<turno>/`,
+que se le avisa al agente en el mensaje y a la que tiene acceso (`--add-dir`).
+Lo que deje ahí (por ejemplo, una imagen hecha con el `image-generator` de
+Antigravity) se manda a Ragnar al terminar el turno, en un frame `image` antes
+del `done`, y la app lo muestra en el chat.
+
+- Solo PNG, JPEG o WebP comprobados por su contenido, hasta 8 MiB cada una y
+  8 por turno; se ignoran subcarpetas, enlaces simbólicos y otros archivos.
+- Las salidas de una conversación que lleva 14 días sin turnos nuevos se borran.
+
+Requiere `ragnar-bridge` **0.13.0 o posterior** y el backend con RAG-237.
 
 ## Editar archivos de configuración desde la app
 
@@ -501,7 +516,7 @@ Tu configuración (`~/.config/ragnar-bridge/config.json`, con el token del servi
 
 Si preferís, volver a correr el comando de instalación que muestra la app (Paso 4) también actualiza y reinicia.
 
-Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app; **0.9.0** recibe imágenes adjuntas en el chat; **0.10.0** suma el protocolo 2, la sincronización automática de agentes (`sync --once`, `publicar`) y los arreglos de la auditoría (permisos por conversación, procesos huérfanos, tope por turno). **0.11.0** informa la cuota real de Claude Code; **0.11.1** renueva su token vencido a través del CLI y respeta los 429; **0.12.0** consulta la cuota solo cuando la app la pide (`/usage`, frame `probe`): los sondeos de rutina (al conectar y cada 120 s) reportan versión y sesión y conservan la última cuota conocida. **0.12.1** sella cada cuota consultada con `quota_at` para que la app sepa cuándo llegó la nueva.
+Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app; **0.9.0** recibe imágenes adjuntas en el chat; **0.10.0** suma el protocolo 2, la sincronización automática de agentes (`sync --once`, `publicar`) y los arreglos de la auditoría (permisos por conversación, procesos huérfanos, tope por turno). **0.11.0** informa la cuota real de Claude Code; **0.11.1** renueva su token vencido a través del CLI y respeta los 429; **0.12.0** consulta la cuota solo cuando la app la pide (`/usage`, frame `probe`): los sondeos de rutina (al conectar y cada 120 s) reportan versión y sesión y conservan la última cuota conocida. **0.12.1** sella cada cuota consultada con `quota_at` para que la app sepa cuándo llegó la nueva. **0.13.0** devuelve al chat las imágenes que genera el agente (carpeta de salidas por turno, frame `image`) y le da a Antigravity acceso a la carpeta de adjuntos.
 
 ## Desinstalar
 
