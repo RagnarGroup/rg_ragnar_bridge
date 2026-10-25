@@ -24,7 +24,7 @@ from typing import Dict, List, Optional
 from ..config import Config
 from ..protocolo import Turno
 from ..tickets import token_de_tickets, url_mcp_tickets
-from .base import Adaptador, Comando, Traductor, bloque_de_cuota
+from .base import Adaptador, Comando, RecetaLogin, Traductor, bloque_de_cuota, patron
 
 log = logging.getLogger("ragnar_bridge")
 
@@ -49,6 +49,16 @@ class AgyAdaptador(Adaptador):
     @property
     def cmd(self) -> List[str]:
         return self.cfg.agy_cmd
+
+    def receta_login(self) -> RecetaLogin:
+        return RecetaLogin(
+            argv=list(self.cmd),
+            env=os.environ.copy(),
+            patron_url=patron(r"https://accounts\.google\.com/o/oauth2/auth\?\S+"),
+            pide_codigo=True,
+            respuestas=(("Select login method", "\r"),),
+            sale_solo=False,
+        )
 
     def sesion_iniciada(self) -> Optional[bool]:
         try:

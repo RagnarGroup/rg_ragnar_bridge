@@ -247,6 +247,27 @@ del `done`, y la app lo muestra en el chat.
 
 Requiere `ragnar-bridge` **0.13.0 o posterior** y el backend con RAG-237.
 
+### Conectar un CLI desde la app
+
+En **Tus CLIs** (Agents o Configuración) cada CLI muestra si tiene sesión y, si no, un
+botón **Conectar**. Ragnar le manda al bridge `login {agent, op: start}` y el bridge corre
+el login del CLI en una pseudo-terminal, sin navegador en el servidor:
+
+| CLI | Comando | Qué ve la persona en la app |
+|---|---|---|
+| Claude Code | `claude auth login` | el link de claude.ai; al aprobar, la página muestra un código que se pega en la app (`op: code`) |
+| Codex | `codex login --device-auth` | el link y un código de dispositivo para ingresar en la página; termina solo |
+| Antigravity | `agy` (elige «Google OAuth») | el link de Google; el código que muestra la página se pega en la app |
+
+Cada cambio viaja en `login_state {agent, estado, url, codigo, pide_codigo, mensaje}`
+(`iniciando`, `esperando`, `listo`, `error`, `cancelado`); al terminar se vuelven a sondear
+los agentes. Un login por CLI a la vez, con un tope de 15 minutos; `op: cancel` lo corta.
+El sondeo marca `conectable` en cada CLI que se puede conectar así (no Hermes, y no en
+Windows). Como la sesión de Claude es la de claude.ai, sus conectores (Canva, Gmail...)
+funcionan en los turnos.
+
+Requiere `ragnar-bridge` **0.14.0 o posterior** y el backend con RAG-248.
+
 ## Editar archivos de configuración desde la app
 
 El botón de **configuración** de la pestaña Agents (al lado de *Mis servidores*)
@@ -516,7 +537,7 @@ Tu configuración (`~/.config/ragnar-bridge/config.json`, con el token del servi
 
 Si preferís, volver a correr el comando de instalación que muestra la app (Paso 4) también actualiza y reinicia.
 
-Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app; **0.9.0** recibe imágenes adjuntas en el chat; **0.10.0** suma el protocolo 2, la sincronización automática de agentes (`sync --once`, `publicar`) y los arreglos de la auditoría (permisos por conversación, procesos huérfanos, tope por turno). **0.11.0** informa la cuota real de Claude Code; **0.11.1** renueva su token vencido a través del CLI y respeta los 429; **0.12.0** consulta la cuota solo cuando la app la pide (`/usage`, frame `probe`): los sondeos de rutina (al conectar y cada 120 s) reportan versión y sesión y conservan la última cuota conocida. **0.12.1** sella cada cuota consultada con `quota_at` para que la app sepa cuándo llegó la nueva. **0.13.0** devuelve al chat las imágenes que genera el agente (carpeta de salidas por turno, frame `image`) y le da a Antigravity acceso a la carpeta de adjuntos.
+Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app; **0.9.0** recibe imágenes adjuntas en el chat; **0.10.0** suma el protocolo 2, la sincronización automática de agentes (`sync --once`, `publicar`) y los arreglos de la auditoría (permisos por conversación, procesos huérfanos, tope por turno). **0.11.0** informa la cuota real de Claude Code; **0.11.1** renueva su token vencido a través del CLI y respeta los 429; **0.12.0** consulta la cuota solo cuando la app la pide (`/usage`, frame `probe`): los sondeos de rutina (al conectar y cada 120 s) reportan versión y sesión y conservan la última cuota conocida. **0.12.1** sella cada cuota consultada con `quota_at` para que la app sepa cuándo llegó la nueva. **0.13.0** devuelve al chat las imágenes que genera el agente (carpeta de salidas por turno, frame `image`) y le da a Antigravity acceso a la carpeta de adjuntos. **0.14.0** deja conectar Claude Code, Codex y Antigravity desde la app (frames `login` y `login_state`).
 
 ## Desinstalar
 

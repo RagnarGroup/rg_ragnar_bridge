@@ -19,7 +19,7 @@ from typing import List, Optional
 from ..config import Config
 from ..protocolo import Turno, regla_concedible
 from ..tickets import token_de_tickets, url_mcp_tickets  # noqa: F401  (se re-exportan)
-from .base import Adaptador, Comando, bloque_de_cuota
+from .base import Adaptador, Comando, RecetaLogin, bloque_de_cuota, patron
 
 _URL_USO = "https://api.anthropic.com/api/oauth/usage"
 _VENTANAS_USO = (("five_hour", None, "5h"), ("seven_day", None, "semana"), ("seven_day_opus", "Opus", "semana"), ("seven_day_sonnet", "Sonnet", "semana"))
@@ -129,6 +129,14 @@ class ClaudeAdaptador(Adaptador):
             return bool(json.loads(salida.stdout).get("loggedIn"))
         except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
             return None
+
+    def receta_login(self) -> RecetaLogin:
+        return RecetaLogin(
+            argv=[*self.cmd, "auth", "login"],
+            env=_entorno(self.cfg),
+            patron_url=patron(r"https://\S*/oauth/authorize\?\S+"),
+            pide_codigo=True,
+        )
 
     def cuota(self, version: str) -> Optional[dict]:
         estado = _estado_cuota.setdefault(self.cfg.config_dir_abs, {"ultima": None, "proxima": 0.0})

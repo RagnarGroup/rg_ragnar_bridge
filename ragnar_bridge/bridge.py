@@ -1,5 +1,5 @@
 """Conexion WebSocket con Ragnar (auth, reconexion con backoff) y atencion de sus
-frames: run, cancel, probe, bootstrap y files.
+frames: run, cancel, probe, bootstrap, files y login (iniciar sesion en un CLI).
 
 Cada turno corre en su propio grupo de procesos para poder matarlo entero al
 cancelar, al vencer el tope de tiempo o al perder la conexion. La cuota de los
@@ -29,6 +29,7 @@ from .salidas import preparar as preparar_salidas, recolectar as recolectar_sali
 from .agents import crear_adaptadores, sondear
 from .archivos import ArchivosEditables, ErrorArchivo
 from .config import Config, ruta_por_defecto
+from .login import Logins
 from .protocolo import RunInvalido, validar_run
 from .sincronizar import (  # noqa: F401  (PREFIJOS_BOOTSTRAP se reexporta)
     PREFIJOS_BOOTSTRAP,
@@ -140,12 +141,17 @@ class Bridge:
         self._cancelados: set = set()
         self.username = "bridge"
         self.bienvenido = False
+        self.logins = Logins(self.adaptadores, self._enviar_si_hay, lambda: self._sondear_y_avisar(con_cuota=False))
 
 
     async def enviar(self, mensaje: dict) -> None:
         async with self._envio:
             await self._ws.send(json.dumps(mensaje, ensure_ascii=False))
 
+
+    async def _enviar_si_hay(self, mensaje: dict) -> None:
+        if self._ws is not None:
+            await self.enviar(mensaje)
 
     async def sesion(self, ws) -> None:
         self._ws = ws
@@ -196,6 +202,7 @@ class Bridge:
                     await self._atender(mensaje)
         finally:
             vigia.cancel()
+            await self.logins.cancelar_todos()
             await self._cortar_todo()
             self._ws = None
 
@@ -269,6 +276,10 @@ class Bridge:
             tarea.add_done_callback(self._tareas_aux.discard)
         elif tipo == "files":
             tarea = asyncio.create_task(self._archivos(mensaje))
+            self._tareas_aux.add(tarea)
+            tarea.add_done_callback(self._tareas_aux.discard)
+        elif tipo == "login":
+            tarea = asyncio.create_task(self.logins.atender(mensaje))
             self._tareas_aux.add(tarea)
             tarea.add_done_callback(self._tareas_aux.discard)
         elif tipo == "cancel":
