@@ -1,5 +1,7 @@
 """Adaptador de Claude Code: arma su comando, detecta si una sesion sigue viva,
-concede permisos por conversacion, escribe el MCP de tickets de cada turno y lee
+concede permisos por conversacion, escribe el MCP de tickets de cada turno, espera
+a que lleguen los conectores de claude.ai (en -p se cargan en segundo plano y un
+turno corto arrancaria sin ellos) y lee
 la cuota (con el token OAuth del CLI, que renueva el propio CLI si vencio, y sin
 consultar a Anthropic mas de una vez cada 30 s ni durante un 429)."""
 
@@ -225,8 +227,35 @@ class ClaudeAdaptador(Adaptador):
         mcp = escribir_mcp_config(
             cfg, self.estado_dir, username, token_de_tickets(cfg, turno), turno.session_id
         )
-        permisos = ruta_permisos(self.estado_dir, turno.session_id)
-        return construir_comando(cfg, turno, mcp, str(permisos) if permisos.is_file() else None)
+        ajustes = escribir_ajustes(self.estado_dir, turno.session_id, cfg.claude_espera_conectores)
+        return construir_comando(cfg, turno, mcp, ajustes)
+
+
+def ruta_ajustes(estado_dir: Path, session_id: str) -> Path:
+    return estado_dir / f"claude-ajustes-{session_id}.json"
+
+
+def escribir_ajustes(estado_dir: Path, session_id: str, espera: float) -> Optional[str]:
+    permisos = ruta_permisos(estado_dir, session_id)
+    if espera <= 0:
+        return str(permisos) if permisos.is_file() else None
+    try:
+        datos = json.loads(permisos.read_text(encoding="utf-8")) if permisos.is_file() else {}
+    except (OSError, json.JSONDecodeError):
+        datos = {}
+    if not isinstance(datos, dict):
+        datos = {}
+    datos["hooks"] = {"SessionStart": [{"hooks": [{"type": "command", "command": f"sleep {espera:g}"}]}]}
+    ruta = ruta_ajustes(estado_dir, session_id)
+    tmp = ruta.with_name(ruta.name + f".tmp-{os.getpid()}")
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    tmp.write_text(json.dumps(datos, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, ruta)
+    return str(ruta)
 
 
 def construir_comando(

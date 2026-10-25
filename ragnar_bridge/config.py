@@ -49,6 +49,7 @@ class Config:
     archivos_editables: bool = True
     config_dir: str = "~/.claude"
     tickets_token: Optional[str] = None
+    claude_espera_conectores: float = 6.0
     reprobar_cada: int = 120
     max_turnos: int = 4
     timeout_turno: float = 2 * 60 * 60
@@ -109,6 +110,12 @@ def cargar(ruta: Optional[Path] = None) -> Config:
         for k, v in cfg.project_paths.items()
     ):
         raise ConfigError("'project_paths' debe mapear claves de proyecto a directorios.")
+    if (
+        isinstance(cfg.claude_espera_conectores, bool)
+        or not isinstance(cfg.claude_espera_conectores, (int, float))
+        or not 0 <= cfg.claude_espera_conectores <= 60
+    ):
+        raise ConfigError("'claude_espera_conectores' tiene que ser un numero de segundos entre 0 y 60.")
     if not isinstance(cfg.archivos_editables, bool):
         raise ConfigError("'archivos_editables' tiene que ser true o false.")
     for nombre in cfg.agentes_pedidos():
