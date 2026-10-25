@@ -1,13 +1,15 @@
 """Interfaz de un agente (CLI) del bridge: `Adaptador` arma el comando de cada turno
-y `Traductor` convierte su salida al stream-json de Claude Code
-(`stream_event`/`assistant`/`user`/`result`), el unico formato que Ragnar entiende."""
+y como iniciar sesion desde la app (`RecetaLogin`), y `Traductor` convierte su salida
+al stream-json de Claude Code (`stream_event`/`assistant`/`user`/`result`), el unico
+formato que Ragnar entiende."""
 
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Pattern, Tuple
 
 from ..config import Config
 from ..protocolo import Turno
@@ -17,6 +19,21 @@ from ..protocolo import Turno
 class Comando:
     argv: List[str]
     env: Dict[str, str]
+
+
+@dataclass(frozen=True)
+class RecetaLogin:
+    argv: List[str]
+    env: Dict[str, str]
+    patron_url: Pattern
+    pide_codigo: bool
+    patron_codigo: Optional[Pattern] = None
+    respuestas: Tuple[Tuple[str, str], ...] = ()
+    sale_solo: bool = True
+
+
+def patron(texto: str) -> Pattern:
+    return re.compile(texto)
 
 
 def ventana(minutos: int) -> str:
@@ -71,6 +88,9 @@ class Adaptador:
         return None
 
     def cuota(self, version: str) -> Optional[dict]:
+        return None
+
+    def receta_login(self) -> Optional[RecetaLogin]:
         return None
 
     def preparar(self, turno: Turno, username: str) -> Comando:

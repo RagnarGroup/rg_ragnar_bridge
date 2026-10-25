@@ -1,6 +1,7 @@
 """Crea los adaptadores de agente pedidos en la config y sondea cuales estan
 instalados, con sesion iniciada y, si se pide, su cuota."""
 
+import os
 from pathlib import Path
 from typing import Dict, List
 
@@ -45,6 +46,7 @@ def sondear(adaptadores: Dict[str, Adaptador], con_cuota: bool = False) -> List[
             "name": nombre,
             "cli_version": adaptador.version(),
             "login": adaptador.sesion_iniciada(),
+            "conectable": os.name == "posix" and adaptador.receta_login() is not None,
         }
         if con_cuota:
             info["quota"] = adaptador.cuota(info["cli_version"]) if info["login"] is not False else None

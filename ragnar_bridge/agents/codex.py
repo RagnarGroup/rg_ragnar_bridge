@@ -27,7 +27,7 @@ from typing import Dict, List, Optional
 from ..config import Config
 from ..protocolo import _PATRON_UUID, Turno
 from ..tickets import token_de_tickets, url_mcp_tickets
-from .base import Adaptador, Comando, Traductor, bloque_de_cuota, ventana
+from .base import Adaptador, Comando, RecetaLogin, Traductor, bloque_de_cuota, patron, ventana
 
 log = logging.getLogger("ragnar_bridge")
 
@@ -63,6 +63,15 @@ class CodexAdaptador(Adaptador):
         if self.cfg.codex_home_abs != por_defecto:
             env["CODEX_HOME"] = self.cfg.codex_home_abs
         return env
+
+    def receta_login(self) -> RecetaLogin:
+        return RecetaLogin(
+            argv=[*self.cmd, "login", "--device-auth"],
+            env=self._entorno_base(),
+            patron_url=patron(r"https://auth\.openai\.com/\S+"),
+            patron_codigo=patron(r"\b[A-Z0-9]{4}-[A-Z0-9]{4,6}\b"),
+            pide_codigo=False,
+        )
 
     def sesion_iniciada(self) -> Optional[bool]:
         try:

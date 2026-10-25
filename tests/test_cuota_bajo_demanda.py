@@ -25,6 +25,9 @@ class _AgenteFalso:
         self.consultas += 1
         return self._cuota
 
+    def receta_login(self):
+        return None
+
 
 class _WsFalso:
     def __init__(self):
