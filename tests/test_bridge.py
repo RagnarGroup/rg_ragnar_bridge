@@ -18,6 +18,7 @@ from ragnar_bridge.protocolo import permiso_es_catastrofico, regla_concedible
 
 
 def _cfg(tmp_path, ragnar, **kw) -> Config:
+    kw.setdefault("claude_espera_conectores", 0)
     return Config(
         url=ragnar.url,
         token=TOKEN,
