@@ -121,7 +121,7 @@ _INTERPRETES = frozenset(
     }
 )
 _PATRON_REGLA = re.compile(r"^([A-Za-z0-9_\-]+)(?:\((.*)\))?$", re.DOTALL)
-_PATRON_COMANDO = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.+/\-]*$")
+_PATRON_COMANDO = re.compile(r"^(?:/|~/|\./)?[A-Za-z0-9_.][A-Za-z0-9_.+/\-]*$")
 
 
 def regla_concedible(tool: str) -> bool:

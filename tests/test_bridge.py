@@ -200,7 +200,7 @@ def test_conceder_no_duplica(tmp_path):
     [
         "Bash", "bash", "Bash()", "Bash(*)", "Bash(**)", "Bash(* )", "Bash(:*)", "Bash( :* )",
         "Bash(sh:*)", "Bash(bash -c *)", "Bash(python:*)", "Bash(python3.12 *)", "Bash(node *)",
-        "Bash(/usr/bin/python3 *)", "Bash(sudo:*)", "Bash(env *)", "Bash(xargs:*)", "Bash(*docker*)",
+        "Bash(/usr/bin/python3 *)", "Bash(~/.local/bin/node *)", "Bash(//etc *)", "Bash(sudo:*)", "Bash(env *)", "Bash(xargs:*)", "Bash(*docker*)",
         "PowerShell", "PowerShell(*)", "PowerShell(pwsh:*)", "*", "mcp__*", "Bash(rm -rf /)", "",
         "Bash(ls)\nBash", "Bash(docker; rm:*)",
     ],
@@ -212,7 +212,9 @@ def test_regla_concedible_rechaza_reglas_amplias(regla):
 @pytest.mark.parametrize(
     "regla",
     ["WebFetch", "Read", "Edit", "Bash(docker *)", "Bash(docker ps:*)", "Bash(npm run test:*)",
-     "Bash(git status)", "Bash(python3 manage.py check)", "mcp__tickets__ver_ticket"],
+     "Bash(git status)", "Bash(python3 manage.py check)", "mcp__tickets__ver_ticket",
+     "Bash(/home/agentes/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell *)",
+     "Bash(~/.local/bin/chromium *)", "Bash(./scripts/captura.sh *)"],
 )
 def test_regla_concedible_acepta_reglas_concretas(regla):
     assert regla_concedible(regla)
