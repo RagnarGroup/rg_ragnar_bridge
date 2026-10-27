@@ -1,11 +1,14 @@
-"""Forma de un `run` de Ragnar (validacion de session_id, prompt, adjuntos e images_out) y
-reglas de permisos que valen para cualquier agente."""
+"""Forma de un `run` de Ragnar (validacion de session_id, prompt, adjuntos, images_out y
+carpeta de trabajo) y reglas de permisos que valen para cualquier agente."""
 
 import base64
 import binascii
+import os
 import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
+
+from .carpetas import ErrorCarpeta, normalizar as normalizar_carpeta
 
 MAX_ADJUNTOS = 4
 MAX_BYTES_ADJUNTO = 4 * 1024 * 1024
@@ -41,6 +44,19 @@ class Turno:
     dirs_extra: Tuple[str, ...] = ()
     imagenes_salida: bool = False
     dir_salida: Optional[str] = None
+    cwd: Optional[str] = None
+
+
+def _validar_cwd(crudo) -> Optional[str]:
+    if crudo is None or crudo == "":
+        return None
+    try:
+        carpeta = normalizar_carpeta(crudo)
+    except ErrorCarpeta as e:
+        raise RunInvalido(f"carpeta de trabajo invalida: {e}")
+    if not os.path.isdir(carpeta):
+        raise RunInvalido(f"la carpeta de trabajo no existe en el servidor: {carpeta}")
+    return carpeta
 
 
 def validar_run(run: dict) -> Turno:
@@ -72,6 +88,7 @@ def validar_run(run: dict) -> Turno:
         "tickets_token" in run,
         _validar_adjuntos(run.get("attachments")),
         imagenes_salida=run.get("images_out") is True,
+        cwd=_validar_cwd(run.get("cwd")),
     )
 
 
