@@ -562,10 +562,25 @@ rm -rf ~/.local/share/ragnar-bridge ~/.config/ragnar-bridge ~/.config/systemd/us
 
 Y revocá el servidor desde **Mis servidores** en la app.
 
-## macOS / Windows
+## Windows
 
-El instalador es solo Linux + systemd. En otros sistemas se instala a mano (el
-bridge en sí corre en Windows, probado en Windows 11):
+`install.ps1` hace lo mismo que `install.sh`: venv en `%LOCALAPPDATA%\ragnar-bridge`,
+config, `doctor`, y una tarea programada que lo arranca sin ventana al iniciar sesión
+y lo reinicia si se cae (no reintenta si Ragnar rechaza el token). Sin admin. En
+PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/RagnarGroup/rg_ragnar_bridge/main/install.ps1))) -Url wss://panel.ragnargroup.app/api/v1/bridge/ws
+```
+
+- `-ReusarConfig`: usa la config ya escrita, sin pedir token.
+- `-Workdir DIR`, `-Agent`, `-Model`, `-Name`, `-Source`: igual que en Linux.
+- Logs: `%LOCALAPPDATA%\ragnar-bridge\bridge.log`.
+- `-Desinstalar`: quita el arranque automático (deja venv y config).
+
+## macOS
+
+El instalador no cubre macOS. Se instala a mano:
 
 ```sh
 python -m venv venv && venv/bin/pip install git+https://github.com/RagnarGroup/rg_ragnar_bridge   # Windows: venv\Scripts\pip
