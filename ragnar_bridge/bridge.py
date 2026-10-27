@@ -28,6 +28,7 @@ from .adjuntos import guardar as guardar_adjuntos
 from .salidas import preparar as preparar_salidas, recolectar as recolectar_salidas
 from .agents import crear_adaptadores, sondear
 from .archivos import ArchivosEditables, ErrorArchivo
+from .carpetas import ErrorCarpeta, atender as atender_carpetas
 from .config import Config, ruta_por_defecto
 from .login import Logins
 from .protocolo import RunInvalido, validar_run
@@ -278,6 +279,10 @@ class Bridge:
             tarea = asyncio.create_task(self._archivos(mensaje))
             self._tareas_aux.add(tarea)
             tarea.add_done_callback(self._tareas_aux.discard)
+        elif tipo == "dirs":
+            tarea = asyncio.create_task(self._carpetas(mensaje))
+            self._tareas_aux.add(tarea)
+            tarea.add_done_callback(self._tareas_aux.discard)
         elif tipo == "login":
             tarea = asyncio.create_task(self.logins.atender(mensaje))
             self._tareas_aux.add(tarea)
@@ -301,6 +306,19 @@ class Bridge:
             await self.enviar({"type": "files_result", "request_id": request_id, "result": resultado})
         except Exception:
             log.exception("No se pudo enviar el resultado del pedido de archivos.")
+
+    async def _carpetas(self, mensaje: dict) -> None:
+        request_id = str(mensaje.get("request_id") or "")
+        try:
+            resultado = await asyncio.to_thread(atender_carpetas, mensaje, self.cfg.workdir_abs)
+        except ErrorCarpeta as error:
+            resultado = {"ok": False, "error": str(error), "code": error.codigo}
+        except Exception as error:
+            resultado = {"ok": False, "error": str(error)[:300], "code": "invalid"}
+        try:
+            await self.enviar({"type": "dirs_result", "request_id": request_id, "result": resultado})
+        except Exception:
+            log.exception("No se pudo enviar el resultado del pedido de carpetas.")
 
     async def _bootstrap(self, mensaje: dict) -> None:
         request_id = str(mensaje.get("request_id") or "")
@@ -421,9 +439,10 @@ class Bridge:
             )
             return
         traductor = adaptador.traductor(turno)
+        carpeta = turno.cwd or self.cfg.workdir_abs
 
         kwargs = dict(
-            cwd=self.cfg.workdir_abs,
+            cwd=carpeta,
             env=comando.env,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
@@ -439,7 +458,7 @@ class Bridge:
                 {
                     "type": "error",
                     "task_id": task_id,
-                    "message": f"No se pudo lanzar el CLI ({' '.join(adaptador.cmd)}) en {self.cfg.workdir_abs}: {e}",
+                    "message": f"No se pudo lanzar el CLI ({' '.join(adaptador.cmd)}) en {carpeta}: {e}",
                 }
             )
             return

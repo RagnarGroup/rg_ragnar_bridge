@@ -36,8 +36,8 @@ _PATRON_NO_ALFANUMERICO = re.compile(r"[^a-zA-Z0-9]")
 log = logging.getLogger("ragnar_bridge")
 
 
-def hay_sesion(cfg: Config, session_id: str) -> bool:
-    carpeta = _PATRON_NO_ALFANUMERICO.sub("-", cfg.workdir_abs)
+def hay_sesion(cfg: Config, session_id: str, cwd: Optional[str] = None) -> bool:
+    carpeta = _PATRON_NO_ALFANUMERICO.sub("-", cwd or cfg.workdir_abs)
     return (Path(cfg.config_dir_abs) / "projects" / carpeta / f"{session_id}.jsonl").is_file()
 
 
@@ -261,7 +261,7 @@ def escribir_ajustes(estado_dir: Path, session_id: str, espera: float) -> Option
 def construir_comando(
     cfg: Config, turno: Turno, mcp_config: Optional[str], settings: Optional[str] = None
 ) -> Comando:
-    reanudar = hay_sesion(cfg, turno.session_id)
+    reanudar = hay_sesion(cfg, turno.session_id, turno.cwd)
     texto = turno.prompt if reanudar else turno.prompt_fallback
     if texto.startswith("-"):
         texto = " " + texto

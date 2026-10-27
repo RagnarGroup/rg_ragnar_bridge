@@ -462,7 +462,7 @@ vas a ver la tarjeta **Autorizar** (paso siguiente).
 | `agent` | — | (0.2, un solo agente) se sigue leyendo; usá `agents` |
 | `reprobar_cada` | `120` | cada cuántos segundos re-comprueba qué CLIs están instalados y con sesión |
 | `claude_cmd` / `agy_cmd` / `codex_cmd` / `hermes_cmd` | `["claude"]` / `["agy"]` / `["codex"]` / `["hermes"]` | comando del CLI (lista, por si es un wrapper) |
-| `workdir` | `~` | dónde arranca cada turno |
+| `workdir` | `~` | dónde arranca cada turno si la conversación no eligió carpeta (desde 0.15.0 la app trae un explorador: cada conversación puede trabajar en su propia carpeta) |
 | `add_dirs` | `[]` | directorios extra accesibles (`--add-dir`) |
 | `config_dir` | `~/.claude` | (claude) carpeta de config del CLI |
 | `archivos_editables` | `true` | deja editar desde la app el `settings.json` y el `CLAUDE.md` de Claude y las rutas que sumes; `false` lo apaga |
