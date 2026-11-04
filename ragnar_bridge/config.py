@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
-AGENTES = ("claude", "agy", "codex", "hermes")
+AGENTES = ("claude", "agy", "codex", "hermes", "cursor")
 AGY_PERMISOS = ("preguntar", "denegar", "auto")
 CODEX_SANDBOXES = ("read-only", "workspace-write", "danger-full-access")
 CODEX_RAZONAMIENTOS = ("low", "medium", "high", "xhigh", "max", "ultra")
@@ -35,6 +35,7 @@ class Config:
     agy_cmd: List[str] = field(default_factory=lambda: ["agy"])
     codex_cmd: List[str] = field(default_factory=lambda: ["codex"])
     hermes_cmd: List[str] = field(default_factory=lambda: ["hermes"])
+    cursor_cmd: List[str] = field(default_factory=lambda: ["agent"])
     agy_model: Optional[str] = None
     agy_timeout: str = "30m"
     agy_dir: str = "~/.gemini/antigravity-cli"
@@ -97,7 +98,7 @@ def cargar(ruta: Optional[Path] = None) -> Config:
     for clave in ("codex_model", "codex_reasoning"):
         if campos.get(clave) is None:
             campos.pop(clave, None)
-    for clave in ("claude_cmd", "agy_cmd", "codex_cmd", "hermes_cmd"):
+    for clave in ("claude_cmd", "agy_cmd", "codex_cmd", "hermes_cmd", "cursor_cmd"):
         if isinstance(campos.get(clave), str):
             campos[clave] = [campos[clave]]
     cfg = Config(**campos)

@@ -82,6 +82,18 @@ codex login status                                  # debe decir «Logged in usi
 codex exec "respondé solo OK"                       # debe contestar OK
 ```
 
+### D) Cursor CLI
+
+El comando es `agent`, no `cursor`. En el bridge el agente se llama `cursor`.
+
+```sh
+curl -fsSL https://cursor.com/install | bash
+NO_OPEN_BROWSER=1 agent login                       # imprime un link; lo abrís en tu navegador
+agent --version
+agent status                                        # debe decir que hay sesión
+agent -p --force --trust "respondé solo OK"         # debe contestar OK
+```
+
 Si después de instalar el comando no se encuentra, abrí una terminal nueva (el
 PATH se recarga al iniciar sesión).
 
@@ -148,8 +160,8 @@ Sin terminal interactiva, pasalo por la variable `RAGNAR_BRIDGE_TOKEN`. `--token
 ragbrg_...` sigue funcionando pero está deprecado: en los argumentos queda
 visible en `ps` y en el historial del shell.
 
-No hace falta decirle el agente: detecta `claude`, `agy`, `codex` y/o `hermes`. Opciones:
-`--agent claude|agy|codex|hermes` (maneja SOLO ese), `--model M` (modelo de agy o de codex con `--agent codex`),
+No hace falta decirle el agente: detecta `claude`, `agy`, `codex`, `hermes` y/o `agent` (Cursor). Opciones:
+`--agent claude|agy|codex|hermes|cursor` (maneja SOLO ese), `--model M` (modelo de agy o de codex con `--agent codex`),
 `--workdir DIR` (dónde arranca cada turno, por defecto tu home) y `--name N`
 (un segundo bridge distinto en el mismo servidor). El script:
 
@@ -458,10 +470,10 @@ vas a ver la tarjeta **Autorizar** (paso siguiente).
 | campo | default | para qué |
 |---|---|---|
 | `url`, `token` | — | los que muestra la app |
-| `agents` | detecta los instalados | fuerza un subconjunto: `["claude"]`, `["agy"]`, `["codex"]`, `["hermes"]` o varios |
+| `agents` | detecta los instalados | fuerza un subconjunto: `["claude"]`, `["agy"]`, `["codex"]`, `["hermes"]`, `["cursor"]` o varios |
 | `agent` | — | (0.2, un solo agente) se sigue leyendo; usá `agents` |
 | `reprobar_cada` | `120` | cada cuántos segundos re-comprueba qué CLIs están instalados y con sesión |
-| `claude_cmd` / `agy_cmd` / `codex_cmd` / `hermes_cmd` | `["claude"]` / `["agy"]` / `["codex"]` / `["hermes"]` | comando del CLI (lista, por si es un wrapper) |
+| `claude_cmd` / `agy_cmd` / `codex_cmd` / `hermes_cmd` / `cursor_cmd` | `["claude"]` / `["agy"]` / `["codex"]` / `["hermes"]` / `["agent"]` | comando del CLI (lista, por si es un wrapper). Cursor se llama `agent` |
 | `workdir` | `~` | dónde arranca cada turno si la conversación no eligió carpeta (desde 0.15.0 la app trae un explorador: cada conversación puede trabajar en su propia carpeta) |
 | `add_dirs` | `[]` | directorios extra accesibles (`--add-dir`) |
 | `config_dir` | `~/.claude` | (claude) carpeta de config del CLI |
