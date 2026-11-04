@@ -22,8 +22,16 @@ _INSTALAR = {
     "agy": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
     "codex": "npm install -g @openai/codex",
     "hermes": "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+    "cursor": "curl -fsSL https://cursor.com/install | bash",
 }
-_LOGIN = {"claude": "claude", "agy": "agy", "codex": "codex login", "hermes": "hermes"}
+_LOGIN = {
+    "claude": "claude",
+    "agy": "agy",
+    "codex": "codex login",
+    "hermes": "hermes",
+    "cursor": "NO_OPEN_BROWSER=1 agent login",
+}
+_BINARIO = {"cursor": "agent"}
 
 
 VARIABLE_TOKEN = "RAGNAR_BRIDGE_TOKEN"
@@ -62,7 +70,7 @@ def _init(args) -> int:
             cfg.agy_model = args.model
 
     if args.agent:
-        binario = args.cli or shutil.which(args.agent)
+        binario = args.cli or shutil.which(_BINARIO.get(args.agent, args.agent))
         if not binario:
             print(
                 f"No encuentro `{args.agent}` en el PATH. Instalalo ({_INSTALAR[args.agent]}) y "
@@ -76,16 +84,16 @@ def _init(args) -> int:
     else:
         encontrados = []
         for nombre in AGENTES:
-            binario = shutil.which(nombre)
+            binario = shutil.which(_BINARIO.get(nombre, nombre))
             if binario:
                 setattr(cfg, f"{nombre}_cmd", [binario])
                 encontrados.append(nombre)
         if not encontrados:
             print(
-                "No encuentro ni `claude`, ni `agy`, ni `codex`, ni `hermes` en el PATH. Instalá al menos "
-                "uno y logueate una vez:\n  Claude Code:  " + _INSTALAR["claude"] + "\n  Antigravity:  "
+                "No encuentro ni `claude`, ni `agy`, ni `codex`, ni `hermes`, ni `agent` (Cursor) en el PATH. "
+                "Instalá al menos uno y logueate una vez:\n  Claude Code:  " + _INSTALAR["claude"] + "\n  Antigravity:  "
                 + _INSTALAR["agy"] + "\n  Codex:        " + _INSTALAR["codex"] + "\n  Hermes:       "
-                + _INSTALAR["hermes"],
+                + _INSTALAR["hermes"] + "\n  Cursor:       " + _INSTALAR["cursor"],
                 file=sys.stderr,
             )
             return 2
@@ -122,7 +130,7 @@ def _doctor(args) -> int:
         estado = {True: "sesion iniciada", False: "SIN sesion: corre `%s` y logueate" % _LOGIN[nombre], None: "sesion sin comprobar"}[sesion]
         print(f"  [{'ok' if sesion is not False else '!!'}] {nombre}: {adaptador.version()} -- {estado}")
         usables += 1
-    paso(usables > 0, "hay al menos un agente instalado" if usables else "no hay ningun agente instalado (claude, agy, codex o hermes)")
+    paso(usables > 0, "hay al menos un agente instalado" if usables else "no hay ningun agente instalado (claude, agy, codex, hermes o cursor)")
     paso(os.path.isdir(cfg.workdir_abs), f"carpeta de trabajo {cfg.workdir_abs}")
 
     try:

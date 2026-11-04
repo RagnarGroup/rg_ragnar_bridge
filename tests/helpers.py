@@ -10,6 +10,7 @@ FAKE = str(Path(__file__).parent / "fake_claude.py")
 FAKE_AGY = str(Path(__file__).parent / "fake_agy.py")
 FAKE_CODEX = str(Path(__file__).parent / "fake_codex.py")
 FAKE_HERMES = str(Path(__file__).parent / "fake_hermes.py")
+FAKE_CURSOR = str(Path(__file__).parent / "fake_cursor.py")
 TOKEN = "ragbrg_test"
 
 

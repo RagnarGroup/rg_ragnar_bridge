@@ -141,7 +141,7 @@ async def test_un_cli_sin_login_o_un_codigo_sin_login_avisan_error(tmp_path):
 
 
 def test_el_sondeo_dice_que_cli_se_conecta_desde_la_app(tmp_path):
-    cfg = Config(url="ws://x", token="t", agents=["claude", "codex", "agy", "hermes"])
+    cfg = Config(url="ws://x", token="t", agents=["claude", "codex", "agy", "hermes", "cursor"])
     from ragnar_bridge.agents import crear_adaptadores
 
     adaptadores = crear_adaptadores(cfg, tmp_path)
@@ -151,4 +151,4 @@ def test_el_sondeo_dice_que_cli_se_conecta_desde_la_app(tmp_path):
         adaptador.sesion_iniciada = lambda: False
     conectables = {a["name"]: a["conectable"] for a in sondear(adaptadores)}
     posix_ = os.name == "posix"
-    assert conectables == {"claude": posix_, "codex": posix_, "agy": posix_, "hermes": False}
+    assert conectables == {"claude": posix_, "codex": posix_, "agy": posix_, "hermes": False, "cursor": posix_}

@@ -8,9 +8,10 @@
 # variable RAGNAR_BRIDGE_TOKEN. `--token` sigue andando pero esta deprecado: en
 # argv queda visible en `ps` y en el historial del shell.
 #
-# Detecta solo los CLIs instalados en el servidor (Claude Code, Antigravity, Codex y/o Hermes):
+# Detecta solo los CLIs instalados en el servidor (Claude Code, Antigravity, Codex, Hermes y/o Cursor):
 # con al menos uno alcanza, y la app te deja elegir entre los que funcionan.
-# --agent claude|agy|codex|hermes   opcional: maneja SOLO ese CLI.
+# --agent claude|agy|codex|hermes|cursor   opcional: maneja SOLO ese CLI.
+# Cursor se instala como `agent`, no como `cursor`.
 #
 # El bridge usa TU sesion del CLI: no te pide credenciales y Ragnar nunca las
 # ve. Volver a correr este script con otro token REEMPLAZA la config y reinicia
@@ -48,17 +49,21 @@ if [ -z "$TOKEN" ] && [ -n "$URL" ] && { : </dev/tty; } 2>/dev/null; then
   printf "\n" >/dev/tty
 fi
 if [ -z "$URL" ] || [ -z "$TOKEN" ]; then
-  echo "Uso: [RAGNAR_BRIDGE_TOKEN=ragbrg_...] install.sh --url wss://.../api/v1/bridge/ws [--agent claude|agy|codex|hermes] [--workdir DIR] [--model M] [--name N]" >&2
+  echo "Uso: [RAGNAR_BRIDGE_TOKEN=ragbrg_...] install.sh --url wss://.../api/v1/bridge/ws [--agent claude|agy|codex|hermes|cursor] [--workdir DIR] [--model M] [--name N]" >&2
   echo "     (sin RAGNAR_BRIDGE_TOKEN el token se pide por la terminal)" >&2
   exit 2
 fi
-case "$AGENT" in ""|claude|agy|codex|hermes) ;; *) echo "--agent tiene que ser claude, agy, codex o hermes." >&2; exit 2 ;; esac
+case "$AGENT" in ""|claude|agy|codex|hermes|cursor) ;; *) echo "--agent tiene que ser claude, agy, codex, hermes o cursor." >&2; exit 2 ;; esac
 
 command -v python3 >/dev/null || { echo "Falta python3 (>= 3.9, con el modulo venv)." >&2; exit 1; }
 
 CLI_BIN=""
 if [ -n "$AGENT" ]; then
-  CLI_BIN="$(command -v "$AGENT" || true)"
+  if [ "$AGENT" = "cursor" ]; then
+    CLI_BIN="$(command -v agent || true)"
+  else
+    CLI_BIN="$(command -v "$AGENT" || true)"
+  fi
   if [ -z "$CLI_BIN" ]; then
     echo "No encuentro \`$AGENT\` en el PATH (abri una terminal nueva si acabas de instalarlo)." >&2
     exit 1
@@ -70,12 +75,14 @@ else
   command -v agy >/dev/null && DETECTADOS="$DETECTADOS agy"
   command -v codex >/dev/null && DETECTADOS="$DETECTADOS codex"
   command -v hermes >/dev/null && DETECTADOS="$DETECTADOS hermes"
+  command -v agent >/dev/null && DETECTADOS="$DETECTADOS cursor"
   if [ -z "$DETECTADOS" ]; then
-    echo "No encuentro ni \`claude\`, ni \`agy\`, ni \`codex\`, ni \`hermes\` en el PATH. Instala al menos uno y logueate corriendolo una vez:" >&2
+    echo "No encuentro ni \`claude\`, ni \`agy\`, ni \`codex\`, ni \`hermes\`, ni \`agent\` (Cursor) en el PATH. Instala al menos uno y logueate corriendolo una vez:" >&2
     echo "  Claude Code:  curl -fsSL https://claude.ai/install.sh | bash" >&2
     echo "  Antigravity:  curl -fsSL https://antigravity.google/cli/install.sh | bash" >&2
     echo "  Codex:        npm install -g @openai/codex   (y despues: codex login)" >&2
     echo "  Hermes:       curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash" >&2
+    echo "  Cursor:       curl -fsSL https://cursor.com/install | bash   (y despues: NO_OPEN_BROWSER=1 agent login)" >&2
     echo "(si acabas de instalarlo, abri una terminal nueva para que el PATH se recargue)" >&2
     exit 1
   fi

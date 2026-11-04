@@ -26,6 +26,10 @@ def _crear(nombre: str, cfg: Config, estado_dir: Path) -> Adaptador:
         from .hermes import HermesAdaptador
 
         return HermesAdaptador(cfg, estado_dir)
+    if nombre == "cursor":
+        from .cursor import CursorAdaptador
+
+        return CursorAdaptador(cfg, estado_dir)
     raise ValueError(f"Agente desconocido: {nombre!r}")
 
 
