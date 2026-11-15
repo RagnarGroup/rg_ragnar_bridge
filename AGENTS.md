@@ -8,6 +8,7 @@ Los flujos de Ragnar viven en Mermaid en la parte «6. Flujos» del libro `ragna
 
 - **Al terminar un cambio**: `ver_flujos(repo="rg_ragnar_bridge", archivos=<git diff --name-only origin/main...HEAD>)` del MCP `tickets`. Si devuelve flujos y el cambio altera lo que dibujan (pasos, llamadas, estados, quién habla con quién), se actualizan con `guardar_flujo` en el mismo trabajo. Si no lo altera, no se toca.
 - Un proceso nuevo (pantalla, endpoint, tarea de fondo) que no aparece en ningún flujo se dibuja con `guardar_flujo`, sumando sus rutas a **Código:**.
+- Al retirar un proceso, su flujo se borra con `eliminar_flujo(capitulo, titulo)` en el mismo trabajo; si solo cambia de nombre, se guarda el nuevo con `guardar_flujo` y se borra el viejo.
 - Solo `flowchart TD|LR` con nodos y flechas (sin `subgraph` ni estilos): es lo que la app dibuja, y `guardar_flujo` rechaza lo demás.
 
 ## Comentarios en el código
