@@ -140,6 +140,9 @@ class ClaudeAdaptador(Adaptador):
             pide_codigo=True,
         )
 
+    def receta_logout(self) -> Comando:
+        return Comando([*self.cmd, "auth", "logout"], _entorno(self.cfg))
+
     def cuota(self, version: str) -> Optional[dict]:
         estado = _estado_cuota.setdefault(self.cfg.config_dir_abs, {"ultima": None, "proxima": 0.0})
         ahora = time.time()

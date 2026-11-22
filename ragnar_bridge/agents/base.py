@@ -1,5 +1,6 @@
-"""Interfaz de un agente (CLI) del bridge: `Adaptador` arma el comando de cada turno
-y como iniciar sesion desde la app (`RecetaLogin`), y `Traductor` convierte su salida
+"""Interfaz de un agente (CLI) del bridge: `Adaptador` arma el comando de cada turno,
+como iniciar sesion desde la app (`RecetaLogin`) y como cerrarla (`receta_logout`), y
+`Traductor` convierte su salida
 al stream-json de Claude Code (`stream_event`/`assistant`/`user`/`result`), el unico
 formato que Ragnar entiende."""
 
@@ -91,6 +92,9 @@ class Adaptador:
         return None
 
     def receta_login(self) -> Optional[RecetaLogin]:
+        return None
+
+    def receta_logout(self) -> Optional[Comando]:
         return None
 
     def preparar(self, turno: Turno, username: str) -> Comando:

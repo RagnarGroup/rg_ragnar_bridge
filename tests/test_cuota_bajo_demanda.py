@@ -28,6 +28,9 @@ class _AgenteFalso:
     def receta_login(self):
         return None
 
+    def receta_logout(self):
+        return None
+
 
 class _WsFalso:
     def __init__(self):

@@ -1,5 +1,5 @@
 """Conexion WebSocket con Ragnar (auth, reconexion con backoff) y atencion de sus
-frames: run, cancel, probe, bootstrap, files y login (iniciar sesion en un CLI).
+frames: run, cancel, probe, bootstrap, files y login (iniciar o cerrar sesion en un CLI).
 
 Cada turno corre en su propio grupo de procesos para poder matarlo entero al
 cancelar, al vencer el tope de tiempo o al perder la conexion. La cuota de los
