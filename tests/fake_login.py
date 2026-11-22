@@ -1,7 +1,8 @@
 """CLI de mentira para los logins: `codigo` imprime un link y espera el codigo pegado
 (como Claude Code), `dispositivo` imprime link y codigo de dispositivo y sale (como
 Codex), `menu` espera un Enter en un menu, pide el codigo y queda abierto (como agy).
-Con el codigo BIEN escribe el archivo de sesion que recibe como segundo argumento."""
+Con el codigo BIEN escribe el archivo de sesion que recibe como segundo argumento.
+`logout` lo borra, `logout-falla` sale con error sin borrarlo y `logout-cuelga` no termina."""
 
 import sys
 import time
@@ -34,4 +35,12 @@ elif modo == "menu":
     sys.stdin.readline()
     print("Open the URL below in your browser:\n https://accounts.google.com/o/oauth2/auth?client_id=1&state=x", flush=True)
     pedir_codigo()
+    time.sleep(60)
+elif modo == "logout":
+    sesion.unlink(missing_ok=True)
+    print("Successfully logged out.")
+elif modo == "logout-falla":
+    print("Error: could not reach the keyring", file=sys.stderr)
+    sys.exit(1)
+elif modo == "logout-cuelga":
     time.sleep(60)

@@ -3,7 +3,8 @@ corre el login del CLI (`Adaptador.receta_login`) en una pseudo-terminal ancha. 
 necesita navegador en el servidor: dan un link y, segun el CLI, un codigo de dispositivo
 o piden pegar el codigo que muestra la pagina (op `code`). Cada cambio se avisa con
 `login_state {agent, estado, url, codigo, pide_codigo, mensaje}` y al terminar se
-vuelven a sondear los agentes. Un login por CLI a la vez; solo POSIX."""
+vuelven a sondear los agentes. Un login por CLI a la vez; solo POSIX. La op `logout`
+corre `Adaptador.receta_logout` sin terminal y termina en `desconectado` o `error`."""
 
 import asyncio
 import logging
@@ -11,13 +12,15 @@ import os
 import re
 import signal
 import struct
+import subprocess
 from typing import Awaitable, Callable, Dict, Optional
 
-from .agents.base import Adaptador, RecetaLogin
+from .agents.base import Adaptador, Comando, RecetaLogin
 
 log = logging.getLogger("ragnar_bridge")
 
 TOPE_SEGUNDOS = 15 * 60
+TOPE_LOGOUT = 30
 CADA_CUANTO_REVISA = 3.0
 TOPE_TEXTO = 64 * 1024
 MAX_CODIGO = 512
@@ -30,6 +33,30 @@ Avisar = Callable[[dict], Awaitable[None]]
 
 def limpiar(texto: str) -> str:
     return _PATRON_ANSI.sub("", texto)
+
+
+def resumen(texto: str) -> str:
+    lineas = [l.strip() for l in limpiar(texto).splitlines() if l.strip()]
+    return " ".join(lineas[-3:])[:300]
+
+
+def correr_logout(receta: Comando) -> Optional[str]:
+    try:
+        salida = subprocess.run(
+            receta.argv,
+            env=receta.env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=TOPE_LOGOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return "El logout no termino a tiempo."
+    except (OSError, subprocess.SubprocessError) as e:
+        return f"No se pudo lanzar el logout: {e}"
+    if salida.returncode != 0:
+        return resumen(salida.stdout + "\n" + salida.stderr) or f"El logout termino con codigo {salida.returncode}."
+    return None
 
 
 class SesionLogin:
@@ -166,8 +193,7 @@ class SesionLogin:
                 return True
 
     def _resumen(self) -> str:
-        lineas = [l.strip() for l in self._texto.splitlines() if l.strip()]
-        return " ".join(lineas[-3:])[:300]
+        return resumen(self._texto)
 
     def _cerrar(self) -> None:
         if self._proceso is not None and self._proceso.returncode is None:
@@ -195,6 +221,9 @@ class Logins:
         nombre = mensaje.get("agent")
         op = mensaje.get("op")
         adaptador = self.adaptadores.get(nombre) if isinstance(nombre, str) else None
+        if op == "logout":
+            await self.desconectar(nombre, adaptador)
+            return
         receta = adaptador.receta_login() if adaptador is not None and os.name == "posix" else None
         if receta is None:
             await self.avisar({"type": "login_state", "agent": nombre, "estado": "error", "mensaje": "Este CLI no se puede conectar desde la app."})
@@ -213,6 +242,26 @@ class Logins:
                 await self.avisar({"type": "login_state", "agent": nombre, "estado": "error", "mensaje": "No hay un login esperando un codigo."})
         elif op == "cancel":
             await self.cancelar(nombre)
+
+    async def desconectar(self, nombre, adaptador: Optional[Adaptador]) -> None:
+        receta = adaptador.receta_logout() if adaptador is not None else None
+        if receta is None:
+            await self.avisar({"type": "login_state", "agent": nombre, "estado": "error", "mensaje": "Este CLI no se puede desconectar desde la app."})
+            return
+        await self.cancelar(nombre)
+        await self.avisar({"type": "login_state", "agent": nombre, "estado": "desconectando"})
+        error = await asyncio.to_thread(correr_logout, receta)
+        conectado = await asyncio.to_thread(adaptador.sesion_iniciada)
+        if conectado is False or (conectado is None and error is None):
+            aviso = {"estado": "desconectado"}
+        else:
+            aviso = {"estado": "error", "mensaje": error or "El CLI sigue con la sesion iniciada."}
+        await self.avisar({"type": "login_state", "agent": nombre, **aviso})
+        log.info("Logout de %s: %s.", nombre, aviso["estado"])
+        try:
+            await self.al_terminar()
+        except Exception:
+            log.exception("No se pudieron re-sondear los agentes tras el logout.")
 
     async def _correr(self, nombre: str, sesion: SesionLogin) -> None:
         try:

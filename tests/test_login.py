@@ -1,6 +1,7 @@
 """Login de los CLIs desde la app: el link y el codigo de dispositivo llegan en
 `login_state`, el codigo pegado va al CLI, el que queda abierto se cierra al ver la
-sesion, un codigo malo termina en error y cancelar corta el proceso."""
+sesion, un codigo malo termina en error y cancelar corta el proceso. El logout cierra
+la sesion y avisa `desconectado`, o `error` si falla, vence o el CLI no lo admite."""
 
 import asyncio
 import os
@@ -11,7 +12,7 @@ import pytest
 
 from ragnar_bridge import login as modulo_login
 from ragnar_bridge.agents import sondear
-from ragnar_bridge.agents.base import Adaptador, RecetaLogin, patron
+from ragnar_bridge.agents.base import Adaptador, Comando, RecetaLogin, patron
 from ragnar_bridge.config import Config
 
 FAKE = str(Path(__file__).parent / "fake_login.py")
@@ -152,3 +153,98 @@ def test_el_sondeo_dice_que_cli_se_conecta_desde_la_app(tmp_path):
     conectables = {a["name"]: a["conectable"] for a in sondear(adaptadores)}
     posix_ = os.name == "posix"
     assert conectables == {"claude": posix_, "codex": posix_, "agy": posix_, "hermes": False, "cursor": posix_}
+
+
+class _ConLogout(_Falso):
+    def __init__(self, modo, sesion: Path, modo_logout):
+        super().__init__(modo, sesion)
+        self.modo_logout = modo_logout
+
+    def receta_logout(self):
+        if self.modo_logout is None:
+            return None
+        return Comando([sys.executable, FAKE, self.modo_logout, str(self.sesion)], dict(os.environ))
+
+
+async def _logouts(tmp_path, modo_logout):
+    avisos, sondeos = [], []
+
+    async def avisar(m):
+        avisos.append(m)
+
+    async def al_terminar():
+        sondeos.append(True)
+
+    sesion = tmp_path / "sesion"
+    sesion.write_text("ok")
+    adaptador = _ConLogout("codigo", sesion, modo_logout)
+    return modulo_login.Logins({"cli": adaptador}, avisar, al_terminar), avisos, sondeos, sesion
+
+
+async def test_logout_cierra_la_sesion_y_avisa_desconectado(tmp_path):
+    logins, avisos, sondeos, sesion = await _logouts(tmp_path, "logout")
+    await logins.atender({"agent": "cli", "op": "logout"})
+
+    assert not sesion.exists()
+    assert [a["estado"] for a in avisos] == ["desconectando", "desconectado"]
+    assert all(a["type"] == "login_state" and a["agent"] == "cli" for a in avisos)
+    assert sondeos == [True]
+
+
+async def test_un_logout_que_falla_avisa_error_con_el_motivo(tmp_path):
+    logins, avisos, sondeos, sesion = await _logouts(tmp_path, "logout-falla")
+    await logins.atender({"agent": "cli", "op": "logout"})
+
+    assert sesion.exists()
+    assert avisos[-1]["estado"] == "error"
+    assert "could not reach the keyring" in avisos[-1]["mensaje"]
+    assert sondeos == [True]
+
+
+async def test_un_logout_colgado_vence(tmp_path, monkeypatch):
+    monkeypatch.setattr(modulo_login, "TOPE_LOGOUT", 0.5)
+    logins, avisos, _, _ = await _logouts(tmp_path, "logout-cuelga")
+    await logins.atender({"agent": "cli", "op": "logout"})
+
+    assert avisos[-1] == {"type": "login_state", "agent": "cli", "estado": "error", "mensaje": "El logout no termino a tiempo."}
+
+
+async def test_un_cli_sin_logout_avisa_que_no_se_puede_desconectar(tmp_path):
+    logins, avisos, sondeos, _ = await _logouts(tmp_path, None)
+    await logins.atender({"agent": "cli", "op": "logout"})
+    await logins.atender({"agent": "otro", "op": "logout"})
+
+    assert [a["mensaje"] for a in avisos] == ["Este CLI no se puede desconectar desde la app."] * 2
+    assert sondeos == []
+
+
+@posix
+async def test_logout_corta_el_login_en_curso(tmp_path):
+    logins, avisos, _, sesion = await _logouts(tmp_path, "logout")
+    sesion.unlink()
+    await logins.atender({"agent": "cli", "op": "start"})
+    await _hasta(avisos, "esperando")
+
+    await logins.atender({"agent": "cli", "op": "logout"})
+    assert [a["estado"] for a in avisos][-3:] == ["cancelado", "desconectando", "desconectado"]
+
+
+def test_las_recetas_de_logout_de_cada_cli(tmp_path):
+    cfg = Config(url="ws://x", token="t", agents=["claude", "codex", "agy", "hermes", "cursor"])
+    from ragnar_bridge.agents import crear_adaptadores
+
+    adaptadores = crear_adaptadores(cfg, tmp_path)
+    argvs = {n: (a.receta_logout().argv if a.receta_logout() else None) for n, a in adaptadores.items()}
+    assert argvs == {
+        "claude": [*cfg.claude_cmd, "auth", "logout"],
+        "codex": [*cfg.codex_cmd, "logout"],
+        "cursor": [*cfg.cursor_cmd, "logout"],
+        "agy": None,
+        "hermes": None,
+    }
+    for adaptador in adaptadores.values():
+        adaptador.encontrado = lambda: True
+        adaptador.version = lambda: "1.0"
+        adaptador.sesion_iniciada = lambda: True
+    desconectables = {a["name"]: a["desconectable"] for a in sondear(adaptadores)}
+    assert desconectables == {"claude": True, "codex": True, "agy": False, "hermes": False, "cursor": True}

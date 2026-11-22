@@ -280,6 +280,27 @@ funcionan en los turnos.
 
 Requiere `ragnar-bridge` **0.14.0 o posterior** y el backend con RAG-248.
 
+### Desconectar un CLI desde la app
+
+Un CLI con sesión muestra **Desconectar**: Ragnar manda `login {agent, op: logout}` y el
+bridge corta el login de ese CLI si había uno en curso y corre su logout sin terminal, con
+un tope de 30 segundos:
+
+| CLI | Comando |
+|---|---|
+| Claude Code | `claude auth logout` |
+| Codex | `codex logout` |
+| Cursor | `agent logout` |
+
+Avisa `login_state` con `desconectando` y después `desconectado` (el CLI ya no tiene
+sesión) o `error` con el motivo en `mensaje`; al terminar se vuelven a sondear los
+agentes. El sondeo marca `desconectable` en cada CLI que lo admite, también en Windows.
+Antigravity no: su `/logout` solo existe dentro de la interfaz interactiva (en `-p` no se
+acepta) y no tiene un subcomando para cerrar sesión, así que se desconecta a mano en el
+servidor (`agy` → `/logout`). Hermes tampoco.
+
+Requiere `ragnar-bridge` **0.17.0 o posterior** y el backend que acepta `op: logout`.
+
 ### Conectores de claude.ai (Canva, Gmail...)
 
 Los conectores de la cuenta de claude.ai llegan a los turnos, con dos detalles:
@@ -563,7 +584,7 @@ Tu configuración (`~/.config/ragnar-bridge/config.json`, con el token del servi
 
 Si preferís, volver a correr el comando de instalación que muestra la app (Paso 4) también actualiza y reinicia.
 
-Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app; **0.9.0** recibe imágenes adjuntas en el chat; **0.10.0** suma el protocolo 2, la sincronización automática de agentes (`sync --once`, `publicar`) y los arreglos de la auditoría (permisos por conversación, procesos huérfanos, tope por turno). **0.11.0** informa la cuota real de Claude Code; **0.11.1** renueva su token vencido a través del CLI y respeta los 429; **0.12.0** consulta la cuota solo cuando la app la pide (`/usage`, frame `probe`): los sondeos de rutina (al conectar y cada 120 s) reportan versión y sesión y conservan la última cuota conocida. **0.12.1** sella cada cuota consultada con `quota_at` para que la app sepa cuándo llegó la nueva. **0.13.0** devuelve al chat las imágenes que genera el agente (carpeta de salidas por turno, frame `image`) y le da a Antigravity acceso a la carpeta de adjuntos. **0.14.0** deja conectar Claude Code, Codex y Antigravity desde la app (frames `login` y `login_state`). **0.14.1** espera a los conectores de claude.ai al arrancar cada turno de Claude (`claude_espera_conectores`). **0.14.2** acepta autorizar desde la app comandos con ruta absoluta, `~/` o `./` (por ejemplo el Chromium de Playwright); los intérpretes con comodín siguen rechazados.
+Versiones que importan: **0.3.2** manda a cada turno el token de tickets de quien escribe; **0.3.3** arregla la URL del MCP de tickets (sin ella el agente decía que no tenía las tools de tickets); **0.5.0** suma Codex CLI; **0.5.1** fija su modelo (`gpt-5.6-terra`) y razonamiento (`medium`) en cada turno; **0.6.0** informa a Ragnar la cuota de Antigravity y de Codex (la app la muestra en *Mis servidores* y en `/usage`); **0.7.0** suma Hermes Agent; **0.8.0** deja editar archivos de configuración desde la app; **0.9.0** recibe imágenes adjuntas en el chat; **0.10.0** suma el protocolo 2, la sincronización automática de agentes (`sync --once`, `publicar`) y los arreglos de la auditoría (permisos por conversación, procesos huérfanos, tope por turno). **0.11.0** informa la cuota real de Claude Code; **0.11.1** renueva su token vencido a través del CLI y respeta los 429; **0.12.0** consulta la cuota solo cuando la app la pide (`/usage`, frame `probe`): los sondeos de rutina (al conectar y cada 120 s) reportan versión y sesión y conservan la última cuota conocida. **0.12.1** sella cada cuota consultada con `quota_at` para que la app sepa cuándo llegó la nueva. **0.13.0** devuelve al chat las imágenes que genera el agente (carpeta de salidas por turno, frame `image`) y le da a Antigravity acceso a la carpeta de adjuntos. **0.14.0** deja conectar Claude Code, Codex y Antigravity desde la app (frames `login` y `login_state`). **0.14.1** espera a los conectores de claude.ai al arrancar cada turno de Claude (`claude_espera_conectores`). **0.14.2** acepta autorizar desde la app comandos con ruta absoluta, `~/` o `./` (por ejemplo el Chromium de Playwright); los intérpretes con comodín siguen rechazados. **0.16.0** suma Cursor CLI (`agent`). **0.17.0** deja desconectar Claude Code, Codex y Cursor desde la app (`login {op: logout}`, campo `desconectable` del sondeo).
 
 ## Desinstalar
 

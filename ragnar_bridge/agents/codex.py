@@ -73,6 +73,9 @@ class CodexAdaptador(Adaptador):
             pide_codigo=False,
         )
 
+    def receta_logout(self) -> Comando:
+        return Comando([*self.cmd, "logout"], self._entorno_base())
+
     def sesion_iniciada(self) -> Optional[bool]:
         try:
             salida = subprocess.run(
